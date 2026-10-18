@@ -36,6 +36,14 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
 /** Connects to a paired Acervo server, hosted locally or over HTTPS. */
 public final class MainActivity extends Activity implements PlaybackService.Controls {
@@ -367,6 +375,9 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         Button change = button("Trocar conexão", false);
         change.setOnClickListener(v -> showHome(null));
         add(panel, change, 10);
+        Button offline = button("Ouvir músicas salvas no celular", true);
+        offline.setOnClickListener(v -> startActivity(new Intent(this, StandaloneActivity.class)));
+        add(panel, offline, 10);
         connectionError = panel;
         page.addView(panel, new FrameLayout.LayoutParams(-1, -1));
     }
@@ -408,6 +419,42 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     @Override public void onPrevious() { js("AC.prev()"); }
     @Override public void onClose() { js("if (AC.state.playing) AC.toggle();"); }
 
+    private boolean saveOne(String id, String title, String artist, int duration) throws Exception {
+        if (id == null || id.isEmpty()) return false;
+        MobileLibrary library = new MobileLibrary(this);
+        if (library.get(id) != null) return false;
+        if (selectedOrigin == null) throw new IOException("Conecte-se ao Acervo antes de salvar.");
+        String cookie = CookieManager.getInstance().getCookie(selectedOrigin);
+        HttpURLConnection connection = (HttpURLConnection) new URL(selectedOrigin + "/api/stream/" + id).openConnection();
+        connection.setConnectTimeout(15000);
+        connection.setReadTimeout(120000);
+        connection.setInstanceFollowRedirects(true);
+        connection.setRequestProperty("Accept", "audio/mpeg,audio/*");
+        if (cookie != null && !cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
+        int status = connection.getResponseCode();
+        if (status != 200) throw new IOException("O servidor respondeu " + status + ". Reabra a conexão e tente novamente.");
+        long expected = connection.getContentLengthLong();
+        if (expected > 250L * 1024 * 1024) throw new IOException("Arquivo maior que o limite de 250 MB.");
+        File temp = File.createTempFile("acervo-offline-", ".mp3", getCacheDir());
+        try {
+            try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(temp)) {
+                byte[] buffer = new byte[32 * 1024];
+                int count;
+                while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                output.getFD().sync();
+            }
+            library.importFile(id, title, artist, duration, temp);
+            return true;
+        } finally {
+            connection.disconnect();
+            temp.delete();
+        }
+    }
+
+    private void toastUi(String message) {
+        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+    }
+
     private void js(String code) {
         runOnUiThread(() -> {
             if (webView != null) webView.evaluateJavascript(code, null);
@@ -415,6 +462,37 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     }
 
     private final class Bridge {
+        @JavascriptInterface public void saveOffline(final String id, final String title, final String artist, final int duration) {
+            new Thread(() -> {
+                try {
+                    boolean saved = saveOne(id, title, artist, duration);
+                    toastUi(saved ? "Salva no celular. Abra Ouvir offline para tocar sem o PC." : "Essa música já está no celular.");
+                } catch (Exception failure) {
+                    toastUi("Não foi possível salvar: " + failure.getMessage());
+                }
+            }).start();
+        }
+
+        @JavascriptInterface public void saveAllOffline(final String json) {
+            new Thread(() -> {
+                int saved = 0;
+                try {
+                    JSONArray list = new JSONArray(json);
+                    for (int i = 0; i < list.length(); i++) {
+                        JSONObject item = list.getJSONObject(i);
+                        if (saveOne(item.optString("id"), item.optString("title"), item.optString("artist"), item.optInt("duration"))) saved++;
+                    }
+                    toastUi(saved > 0 ? saved + " música(s) salva(s) no celular." : "As músicas já estavam salvas.");
+                } catch (Exception failure) {
+                    toastUi("Não foi possível salvar: " + failure.getMessage());
+                }
+            }).start();
+        }
+
+        @JavascriptInterface public void openOffline() {
+            runOnUiThread(() -> startActivity(new Intent(MainActivity.this, StandaloneActivity.class)));
+        }
+
         @JavascriptInterface public void nowPlaying(String title, String artist, boolean playing) {
             runOnUiThread(() -> {
                 if (playing && !askedNotifications && Build.VERSION.SDK_INT >= 33

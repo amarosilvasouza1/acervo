@@ -43,11 +43,12 @@ Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência 
 
 O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
 
-## Novidades 1.3.2
+## Novidades 1.3.3
 
 - **Conexão salva no celular:** o APK abre direto no último Acervo conectado; o botão **Conexão** permite trocar de servidor.
 - **Segundo plano e tela desligada:** a música continua ao minimizar ou apagar a tela, com play/pause, anterior e próxima na notificação.
 - **Notificação no modo conectado:** os controles também aparecem quando o som vem do Acervo no PC.
+- **Músicas no celular:** salve uma faixa ou a biblioteca inteira em MP3 e ouça em **Ouvir offline**, sem depender do PC.
 - **Tela desligada:** o serviço mantém CPU e Wi-Fi ativos durante a reprodução.
 - **Aleatório inteligente:** a fila embaralhada intercala artistas e evita repetir o mesmo nome em sequência.
 - **Rádio com prefetch:** no modo independente, a próxima sugestão é baixada enquanto a atual toca.
@@ -67,15 +68,17 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.2 já aceita links HTTPS; instale esta versão para ter o segundo plano, a notificação e a conexão salva. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.3 já aceita links HTTPS; instale esta versão para ter o segundo plano, a notificação e a conexão salva. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.3.2.apk](releases/acervo-1.3.2.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
+Instale [releases/acervo-1.3.3.apk](releases/acervo-1.3.3.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
 O Android guarda M4A ou WebM de áudio, conforme a fonte. A conversão para MP3, a normalização em −14 LUFS e a análise de timbre continuam no servidor do PC. O player continua em segundo plano, com play/pause e próxima na notificação; no modo rádio, a próxima faixa é baixada enquanto a atual toca. Desinstalar apaga a biblioteca local; atualizar com a mesma assinatura mantém os dados.
+
+Para levar o acervo do PC, abra uma faixa e toque em **Salvar no celular**, ou use **Salvar biblioteca no celular** no menu. Os MP3 ficam na área privada do app e aparecem em **Ouvir offline**; continuam tocando sem PC, sem servidor e sem internet. Salvar a biblioteca inteira consome espaço e tempo de download; as faixas já salvas são puladas.
 
 Para conectar as duas versões:
 

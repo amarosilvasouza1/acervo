@@ -6,6 +6,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -218,6 +219,40 @@ public final class MobileLibrary {
         } finally {
             if (connection != null) connection.disconnect();
             if (!committed && partial.exists()) partial.delete();
+        }
+    }
+
+    /** Copies an MP3 already served by the Acervo PC into the phone library for offline playback. */
+    public Track importFile(String id, String title, String artist, long duration, File source) throws Exception {
+        if (!validId(id)) throw new IOException("Música inválida.");
+        if (source == null || !source.isFile() || source.length() == 0) throw new IOException("O arquivo baixado está vazio.");
+        synchronized (this) {
+            Track existing = get(id);
+            if (existing != null) return existing;
+            if (audioFolder.getUsableSpace() < FREE_RESERVE + source.length()) {
+                throw new IOException("Não há espaço suficiente no celular para salvar esta música.");
+            }
+            File destination = new File(audioFolder, id + ".mp3");
+            File partial = File.createTempFile(id + "-", ".part", audioFolder);
+            boolean committed = false;
+            try {
+                try (InputStream input = new FileInputStream(source); FileOutputStream output = new FileOutputStream(partial)) {
+                    byte[] buffer = new byte[32 * 1024];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
+                    output.getFD().sync();
+                }
+                if (destination.exists() && !destination.delete()) throw new IOException("Não foi possível substituir o arquivo anterior.");
+                if (!partial.renameTo(destination)) throw new IOException("Não foi possível guardar o arquivo no celular.");
+                Track track = new Track(id, safe(title, "Música"), safe(artist, ""), "", destination.getName(),
+                        duration, System.currentTimeMillis(), 0, 0);
+                tracks.add(track);
+                try { persist(); } catch (IOException failure) { tracks.remove(track); destination.delete(); throw failure; }
+                committed = true;
+                return track;
+            } finally {
+                if (!committed && partial.exists()) partial.delete();
+            }
         }
     }
 

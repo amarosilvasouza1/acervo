@@ -5,10 +5,11 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.3.2';
+  var NEWS_VERSION = '1.3.3';
   var NEWS = [
     ['Tela desligada', 'No APK 1.3.2 a música continua com a tela apagada: o serviço segura CPU e Wi-Fi e mantém a notificação ativa.'],
     ['Notificação no modo conectado', 'Play, pausa e próxima também aparecem quando o som vem do Acervo no PC, não só no modo independente.'],
+    ['Músicas no celular', 'Salve uma faixa ou a biblioteca inteira em MP3 e ouça em Ouvir offline, mesmo sem PC e sem internet.'],
     ['Aleatório inteligente', 'A fila embaralhada intercala artistas e evita repetir o mesmo nome em sequência.'],
     ['Rádio que já baixa a próxima', 'No modo rádio do celular, a próxima faixa é baixada enquanto a atual toca e emenda sozinha.'],
     ['Conexão salva', 'O APK abre direto no último Acervo conectado, sem repetir o QR code.'],
@@ -280,6 +281,7 @@
           '<div class="sheet-badges">' + bits.join('') + '</div>' +
           '<div class="sheet-actions">' +
             '<button class="btn btn-accent" data-action="play-track" data-id="' + esc(t.id) + '">' + icon('play', 15) + ' Tocar</button>' +
+            (window.AcervoAndroid && window.AcervoAndroid.saveOffline ? '<button class="btn btn-ghost" data-action="save-offline" data-id="' + esc(t.id) + '">' + icon('phone', 15) + ' Salvar no celular</button>' : '') +
             '<button class="btn btn-ghost" data-action="start-radio" data-id="' + esc(t.id) + '">' + icon('radio', 15) + ' Rádio</button>' +
             '<a class="btn btn-quiet" href="' + esc(t.sourceUrl) + '" target="_blank" rel="noopener noreferrer">YouTube ' + icon('arrow', 14) + '</a>' +
             '<button class="icon-btn" data-action="delete-track" data-id="' + esc(t.id) + '" aria-label="Remover do acervo" title="Remover do acervo">' + icon('trash', 17) + '</button>' +
@@ -463,6 +465,26 @@
         return;
       }
       case 'open-track': openTrack(id); return;
+      case 'save-offline': {
+        var track = AC.trackById(id);
+        if (track && window.AcervoAndroid && window.AcervoAndroid.saveOffline) {
+          window.AcervoAndroid.saveOffline(track.id, track.title, track.artist, Math.round(track.duration || 0));
+          AC.toast('Salvando no celular…');
+        }
+        return;
+      }
+      case 'open-offline':
+        if (window.AcervoAndroid && window.AcervoAndroid.openOffline) window.AcervoAndroid.openOffline();
+        return;
+      case 'save-all-offline':
+        if (window.AcervoAndroid && window.AcervoAndroid.saveAllOffline && S.tracks.length) {
+          var payload = JSON.stringify(S.tracks.map(function (t) {
+            return { id: t.id, title: t.title, artist: t.artist, duration: Math.round(t.duration || 0) };
+          }));
+          window.AcervoAndroid.saveAllOffline(payload);
+          AC.toast('Salvando ' + S.tracks.length + ' músicas no celular…');
+        }
+        return;
       case 'play-track': AC.play(id); return;
       case 'start-radio': startRadio(id); return;
       case 'radio-current': if (S.current) startRadio(S.current.id); return;
@@ -580,6 +602,10 @@
   /* ---------------- boot ---------------- */
   async function boot() {
     AC.hydrateIcons(document);
+    if (window.AcervoAndroid) {
+      var offlineLink = $('offline-link'); if (offlineLink) offlineLink.hidden = false;
+      var saveAllLink = $('save-all-link'); if (saveAllLink) saveAllLink.hidden = false;
+    }
     var connected = !AC.initConnect || await AC.initConnect();
     if (connected) {
     try {
