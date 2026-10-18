@@ -312,8 +312,11 @@
       if (!t) artist.textContent = 'Escolha uma faixa do acervo';
       else artist.textContent = t.artist;
       artist.disabled = !t || !t.artist;
-      if (t && t.artist) artist.setAttribute('data-artist', t.artist);
-      else artist.removeAttribute('data-artist');
+      if (t && t.artist) {
+        if (typeof artist.setAttribute === 'function') artist.setAttribute('data-artist', t.artist);
+      } else if (typeof artist.removeAttribute === 'function') {
+        artist.removeAttribute('data-artist');
+      }
     }
     setPlayIcon();
     var total = $('time-total');
