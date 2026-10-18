@@ -49,6 +49,7 @@ public final class MainActivity extends Activity {
     private String selectedOrigin;
     private String retryUrl;
     private boolean failed;
+    private boolean autoOpened;
     private Runnable loadTimeout;
 
     @Override public void onCreate(Bundle state) {
@@ -60,6 +61,19 @@ public final class MainActivity extends Activity {
     }
 
     private void showHome(String message) {
+        boolean first = !autoOpened;
+        autoOpened = true;
+        if (first && message == null) {
+            String remembered = preferences.getString("server_origin", null);
+            if (remembered != null) {
+                try {
+                    connect(PairingLink.parse(remembered));
+                    return;
+                } catch (IllegalArgumentException ignored) {
+                    preferences.edit().remove("server_origin").apply();
+                }
+            }
+        }
         cancelTimeout();
         disposeWebView();
         selectedOrigin = null;
@@ -212,7 +226,7 @@ public final class MainActivity extends Activity {
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.2 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.3.1 Mobile");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setWebChromeClient(new WebChromeClient());

@@ -41,6 +41,17 @@ Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência 
 
 O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
 
+## Novidades 1.3.1
+
+- **Conexão salva no celular:** o APK abre direto no último Acervo conectado; o botão **Conexão** permite trocar de servidor.
+- **Segundo plano:** a música continua ao minimizar, com play/pause, anterior e próxima na notificação.
+- **Rádio com prefetch:** no modo independente, a próxima sugestão é baixada enquanto a atual toca.
+- **Continuar de onde parou:** o PC e a versão Web lembram a última faixa e a posição.
+- **Timer de sono:** pausa automática em 15, 30, 60 ou 90 minutos.
+- **Buscas recentes:** as últimas buscas ficam salvas para repetir com um toque.
+
+A tela **Novidades** dentro do app resume essas mudanças e pode ser dispensada.
+
 ## Acessar o PC fora de casa (Tailscale)
 
 O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, sem abrir portas no roteador, usando a tailnet privada do Tailscale.
@@ -51,11 +62,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.1 já aceita links HTTPS; instale esta versão para ter o segundo plano, a notificação e a conexão salva. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.3.0.apk](releases/acervo-1.3.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo.
+Instale [releases/acervo-1.3.1.apk](releases/acervo-1.3.1.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

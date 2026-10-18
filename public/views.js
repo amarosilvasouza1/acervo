@@ -5,6 +5,54 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
+  var NEWS_VERSION = '1.3.1';
+  var NEWS = [
+    ['Player em segundo plano', 'No APK 1.3.1 a música continua ao minimizar, com play/pause e próxima na notificação.'],
+    ['Rádio que já baixa a próxima', 'No modo rádio do celular, a próxima faixa é baixada enquanto a atual toca e emenda sozinha.'],
+    ['Conexão salva', 'O APK abre direto no último Acervo conectado, sem repetir o QR code.'],
+    ['Continue de onde parou', 'O player lembra a última faixa e a posição; basta tocar em play.'],
+    ['Timer de sono', 'Escolha 15, 30, 60 ou 90 minutos e o Acervo pausa sozinho.'],
+    ['Buscas recentes', 'Suas últimas buscas ficam salvas para repetir com um toque.']
+  ];
+  var HISTORY_KEY = 'acervo:searches';
+
+  function searchHistory() {
+    try {
+      var list = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      return Array.isArray(list) ? list.slice(0, 6) : [];
+    } catch (e) { return []; }
+  }
+
+  function rememberQuery(query) {
+    var list = searchHistory().filter(function (item) { return item.toLowerCase() !== query.toLowerCase(); });
+    list.unshift(query);
+    try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, 6))); } catch (e) {}
+  }
+
+  function newsBanner() {
+    var unseen = true;
+    try { unseen = localStorage.getItem('acervo:newsSeen') !== NEWS_VERSION; } catch (e) {}
+    if (!unseen) return '';
+    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades 1.3.1</span><strong>Segundo plano, rádio com prefetch e conexão salva</strong><p>Notificação com controles, retomada da última faixa, timer de sono e buscas recentes.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
+  }
+
+  function openNews() {
+    var html = '<div class="modal-head"><div><h2>Novidades do Acervo</h2><p>Versão ' + NEWS_VERSION + ' · PC e mobile</p></div><button class="icon-btn modal-close" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div><div class="news-list">';
+    NEWS.forEach(function (item) {
+      html += '<div class="news-item"><strong>' + esc(item[0]) + '</strong><p>' + esc(item[1]) + '</p></div>';
+    });
+    html += '</div><div class="modal-actions"><button class="btn btn-accent" data-action="close-modal">Fechar</button></div>';
+    AC.openModal(html);
+    try { localStorage.setItem('acervo:newsSeen', NEWS_VERSION); } catch (e) {}
+    render();
+  }
+
+  function openSleep() {
+    var options = [15, 30, 60, 90].map(function (minutes) {
+      return '<button class="btn btn-ghost" data-action="sleep-option" data-min="' + minutes + '">' + minutes + ' min</button>';
+    }).join('');
+    AC.openModal('<div class="modal-head"><div><h2>Timer de sono</h2><p>O Acervo pausa sozinho depois do tempo escolhido.</p></div><button class="icon-btn modal-close" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div><div class="sleep-options">' + options + '<button class="btn btn-quiet" data-action="sleep-option" data-min="0">Desligar</button></div>');
+  }
 
   function $(id) { return document.getElementById(id); }
   function qs(sel, root) { return (root || document).querySelector(sel); }
@@ -74,7 +122,7 @@
       return '<button class="quick-item" data-action="play-track" data-id="' + esc(t.id) + '"><span class="quick-cover">' + AC.coverHtml(t, true) + '</span><span class="quick-title">' + esc(t.title) + '</span><span class="quick-play" aria-hidden="true">' + icon('play', 17) + '</span></button>';
     }).join('') + '</div>' : '';
     var banner = '<section class="radio-banner"><div class="radio-art">' + icon('radio', 55) + '</div><div class="radio-banner-copy"><span class="radio-kicker">FEITA A PARTIR DO SEU SOM</span><h2>O que vem depois?</h2><p>Descubra músicas que combinam com o que você ouve. Sua rádio busca novidades em tempo real.</p><button class="btn btn-light" data-action="nav" data-view="radio">' + icon('radio', 16) + ' Explorar minha rádio</button></div></section>';
-    return '<div class="view home-view">' + filters + quick +
+    return '<div class="view home-view">' + filters + quick + newsBanner() +
       (recent.length ? '<section class="section"><div class="section-head"><h2>De volta ao seu som</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid">' + picks.map(cardHtml).join('') + '</div></section>' : emptyHome()) + banner +
       (listened.length ? '<section class="section"><div class="section-head"><h2>Ouvidas recentemente</h2><button class="link" data-action="start-radio">Descobrir parecidas</button></div><div class="grid">' + listened.slice(0, 6).map(cardHtml).join('') + '</div></section>' : '') +
       (recent.length ? '<section class="section"><div class="section-head"><h2>Adicionadas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid">' + recent.map(cardHtml).join('') + '</div></section>' : '') + '</div>';
@@ -104,6 +152,7 @@
 
   function viewSearch() {
     var s = S.search;
+    var recentSearches = searchHistory();
     var head = '<div class="view-head"><div><h1>' + (s.q ? 'Resultados para “' + esc(s.q) + '”' : 'Buscar no YouTube') + '</h1>' +
       '<p class="sub">O áudio baixado vira MP3 normalizado e entra no acervo automaticamente.</p></div>' +
       (s.q ? '<div class="head-actions"><button class="btn btn-ghost btn-sm" data-action="open-download">' + icon('link', 15) + ' Usar link</button></div>' : '') +
@@ -113,6 +162,9 @@
       return '<div class="view">' + head +
         '<div class="empty"><div class="empty-mark">' + icon('search', 24) + '</div>' +
         '<h2>O que vamos ouvir hoje?</h2><p>Pesquise por faixa, artista ou cole um link do YouTube. Você também pode começar por uma destas:</p>' +
+        (recentSearches.length ? '<div class="search-history"><span class="tiny">Buscas recentes</span><div class="chips" style="justify-content:center;margin-top:8px">' + recentSearches.map(function (q) {
+          return '<button class="chip" data-action="search-chip" data-q="' + esc(q) + '">' + esc(q) + '</button>';
+        }).join('') + '</div></div>' : '') +
         '<div class="chips" style="justify-content:center">' +
           ['Daft Punk', 'Sade', 'Tame Impala', 'Billie Eilish', 'Charlie Brown Jr.', 'Nirvana'].map(function (q) {
             return '<button class="chip" data-action="search-chip" data-q="' + esc(q) + '">' + esc(q) + '</button>';
@@ -136,7 +188,11 @@
       return hay.indexOf(s.q.toLowerCase()) !== -1;
     }).slice(0, 5) : [];
 
-    return '<div class="view">' + head + body +
+    return '<div class="view">' + head +
+      (recentSearches.length ? '<div class="search-history" style="margin:0 0 14px"><span class="tiny">Buscas recentes</span><div class="chips" style="margin-top:8px">' + recentSearches.map(function (q) {
+        return '<button class="chip" data-action="search-chip" data-q="' + esc(q) + '">' + esc(q) + '</button>';
+      }).join('') + '</div></div>' : '') +
+      body +
       (local.length ? '<section class="section"><div class="section-head"><h2>Já no seu acervo</h2><span class="tiny">' + local.length + ' resultado(s)</span></div><div class="rows">' + local.map(rowHtml).join('') + '</div></section>' : '') +
     '</div>';
   }
@@ -348,6 +404,7 @@
   async function doSearch(q) {
     var query = String(q || '').trim();
     if (!query) return;
+    rememberQuery(query);
     S.view = 'search';
     S.search.q = query;
     S.search.loading = true;
@@ -419,6 +476,10 @@
       case 'play-all': if (S.tracks.length) AC.play(S.tracks[0].id); return;
       case 'shuffle-play': if (S.tracks.length) AC.play(shuffled(S.tracks)[0].id); return;
       case 'clear-filter': S.filter = ''; render(); return;
+      case 'whats-new': openNews(); return;
+      case 'dismiss-news': try { localStorage.setItem('acervo:newsSeen', NEWS_VERSION); } catch (e) {} render(); return;
+      case 'sleep': openSleep(); return;
+      case 'sleep-option': AC.setSleep(Number(el.getAttribute('data-min'))); AC.closeModals(); return;
       default: return false;
     }
   };
@@ -526,7 +587,10 @@
     } catch (e) {}
     try { await AC.loadLibrary({ silent: true }); } catch (e) { if (e.status !== 401) AC.toast('Servidor indisponível. Inicie com node server.js', 'error'); }
     }
+    var restored = false;
+    try { restored = AC.restoreLast && AC.restoreLast(); } catch (e) {}
     render();
+    if (restored) AC.toast('Retome de onde parou — toque em play.');
 
     var form = $('search-form');
     if (form) {

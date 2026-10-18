@@ -10,7 +10,7 @@ A sincronizacao de bibliotecas e manual: depois de parear e conectar ao outro Ac
 
 ## Instalar
 
-1. Copie `releases/acervo-1.3.0.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
+1. Copie `releases/acervo-1.3.1.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
 2. Abra o aplicativo e toque em **Usar neste celular**.
 3. Em **Buscar**, procure uma musica e toque em **Baixar** ou **Baixar e ouvir**. Ela fica salva na biblioteca do celular.
 4. Para controlar outro Acervo, volte a **Conexoes** e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor.
@@ -52,7 +52,7 @@ O script usa a chave original em `android/signing/acervo-release.jks` e sua senh
 
 Guarde um backup privado dos dois arquivos juntos. Eles permitem assinar futuras atualizacoes compativeis com a instalacao existente. A pasta `signing/` esta excluida pelo `.gitignore`: nao envie a chave ou a senha junto com o APK. Se a chave existir e a senha estiver ausente, a compilacao para em vez de substituir a assinatura.
 
-Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.3.0.apk` com o Android Build Tools no PATH.
+Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.3.1.apk` com o Android Build Tools no PATH.
 
 ## Atualizar pelo aplicativo
 

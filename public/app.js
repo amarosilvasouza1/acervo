@@ -26,6 +26,7 @@
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     more: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/>',
     device: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 21h8M12 16v5"/>',
     phone: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 5h4M11 18.5h2"/>',
     wave: '<path d="M4 10v4M8 6v12M12 8v8M16 4v16M20 9v6"/>'
@@ -54,6 +55,7 @@
     sort: 'recent',
     filter: '',
     queueOpen: false,
+    sleepMinutes: 0,
     modals: []
   };
 
@@ -299,6 +301,27 @@
       }).catch(function () { audio.dataset.listenedSource = ''; });
   };
 
+  AC.restoreLast = function () {
+    var saved = null;
+    try { saved = JSON.parse(localStorage.getItem('acervo:resume') || 'null'); } catch (e) {}
+    if (!saved || !saved.id || !saved.at || Date.now() - saved.at > 7 * 86400000) return false;
+    var track = AC.trackById(saved.id);
+    if (!track) return false;
+    state.current = track;
+    state.queue = state.tracks.map(function (t) { return t.id; });
+    state.qi = state.queue.indexOf(track.id);
+    audio.src = '/api/stream/' + encodeURIComponent(track.id);
+    var position = Math.max(0, Number(saved.position) || 0);
+    if (position > 2) {
+      audio.addEventListener('loadedmetadata', function () {
+        try { audio.currentTime = Math.min(position, audio.duration || position); } catch (e) {}
+        paintProgress();
+      }, { once: true });
+    }
+    paintPlayer();
+    return true;
+  };
+
   AC.toggle = function () {
     if (AC.syncCommand && AC.syncCommand('toggle', {})) return;
     if (!state.current) {
@@ -357,6 +380,26 @@
     if (state.queue[index]) AC.play(state.queue[index], { keepRadio: true });
   };
 
+  var sleepTimer = null;
+  AC.setSleep = function (minutes) {
+    if (sleepTimer) { clearTimeout(sleepTimer); sleepTimer = null; }
+    state.sleepMinutes = Number(minutes) || 0;
+    var btn = document.querySelector('.player-timer');
+    if (btn) {
+      btn.classList.toggle('is-on', state.sleepMinutes > 0);
+      btn.title = state.sleepMinutes > 0 ? 'Timer: ' + state.sleepMinutes + ' min' : 'Timer de sono';
+    }
+    if (!state.sleepMinutes) { AC.toast('Timer de sono desligado'); return; }
+    sleepTimer = setTimeout(function () {
+      sleepTimer = null;
+      state.sleepMinutes = 0;
+      if (btn) { btn.classList.remove('is-on'); btn.title = 'Timer de sono'; }
+      if (!audio.paused) { audio.pause(); state.playing = false; setPlayIcon(); }
+      AC.toast('Timer encerrado. Boa noite!');
+    }, state.sleepMinutes * 60000);
+    AC.toast('O Acervo pausa em ' + state.sleepMinutes + ' minutos');
+  };
+
   AC.seekRatio = function (ratio) {
     if (state.current && AC.syncCommand && AC.syncCommand('seek', { position: Math.max(0, Math.min(1, ratio)) * state.current.duration })) return;
     if (!state.current || !isFinite(audio.duration) || audio.duration <= 0) return;
@@ -383,6 +426,19 @@
     if (total) total.textContent = AC.fmtTime(dur);
   }
 
+  var resumeSavedAt = 0;
+  function saveResume() {
+    if (!state.current || (AC.isRemotePlayback && AC.isRemotePlayback())) return;
+    var position = audio.currentTime || 0;
+    if (!isFinite(position) || position < 1) return;
+    try { localStorage.setItem('acervo:resume', JSON.stringify({ id: state.current.id, position: position, at: Date.now() })); } catch (e) {}
+  }
+  audio.addEventListener('timeupdate', function () {
+    var now = Date.now();
+    if (now - resumeSavedAt > 5000) { resumeSavedAt = now; saveResume(); }
+  });
+  audio.addEventListener('pause', saveResume);
+  window.addEventListener('pagehide', saveResume);
   audio.addEventListener('timeupdate', paintProgress);
   audio.addEventListener('loadedmetadata', paintProgress);
   audio.addEventListener('play', function () { if (AC.isRemotePlayback && AC.isRemotePlayback()) { audio.pause(); return; } state.playing = true; setPlayIcon(); if (AC.notifyPlayback) AC.notifyPlayback(true); });
