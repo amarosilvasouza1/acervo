@@ -11,6 +11,7 @@ import * as Library from './lib/library.js';
 import * as Playlists from './lib/playlists.js';
 import { runRadio, validateRadioInput } from './lib/radio.js';
 import { createConnectManager } from './lib/connect.js';
+import { createCatalogService } from './lib/catalog.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -29,6 +30,7 @@ const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: 
   publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
   trustTailscale: process.env.ACERVO_TRUST_TAILSCALE === '1',
   stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
+const catalog = createCatalogService({ getTracks: Library.all, getHistory: Library.history });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -425,6 +427,23 @@ const server = http.createServer(async function (req, res) {
     if (req.method === 'GET' && pathname === '/healthz') return sendJson(res, 200, { ok: true });
     const connection = connect.authorize(req, pathname);
     if (await connect.handle(req, res, pathname, connection, readBody, sendJson)) return;
+    if (req.method === 'GET' && (pathname === '/api/explore' || pathname === '/api/artist')) {
+      const controller = new AbortController();
+      const cancel = function () { if (!res.writableEnded) controller.abort(); };
+      req.once('aborted', cancel);
+      res.once('close', cancel);
+      try {
+        const data = pathname === '/api/artist'
+          ? await catalog.artist(url.searchParams.get('name') || '', { signal: controller.signal })
+          : await catalog.explore(url.searchParams.get('section') || 'recommended', { signal: controller.signal });
+        connect.authorize(req, pathname);
+        if (!res.destroyed) sendJson(res, 200, data);
+      } finally {
+        req.removeListener('aborted', cancel);
+        res.removeListener('close', cancel);
+      }
+      return;
+    }
     if (req.method === 'GET' && pathname === '/api/app/version') {
       const apk = await readFile(ANDROID_APK).catch(function () { return null; });
       if (!apk) return sendJson(res, 404, { error: 'Nenhuma atualização Android disponível neste servidor.' });

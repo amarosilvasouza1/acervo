@@ -311,6 +311,9 @@
     if (artist) {
       if (!t) artist.textContent = 'Escolha uma faixa do acervo';
       else artist.textContent = t.artist;
+      artist.disabled = !t || !t.artist;
+      if (t && t.artist) artist.setAttribute('data-artist', t.artist);
+      else artist.removeAttribute('data-artist');
     }
     setPlayIcon();
     var total = $('time-total');

@@ -77,6 +77,12 @@
     return t.loudness && isFinite(t.loudness.i) ? (String(t.loudness.i).replace('.', ',') + ' LUFS') : 'sem medição';
   }
 
+  function artistLink(name, className) {
+    var artist = String(name || '').trim();
+    if (!artist) return '<span class="' + (className || '') + '">Artista desconhecido</span>';
+    return '<button class="artist-link ' + (className || '') + '" data-action="open-artist" data-artist="' + esc(artist) + '" title="Ver artista: ' + esc(artist) + '">' + esc(artist) + '</button>';
+  }
+
   function cardHtml(t) {
     return '<article class="card" role="button" tabindex="0" data-action="open-track" data-id="' + esc(t.id) + '">' +
       '<div class="card-cover">' + AC.coverHtml(t) +
@@ -84,7 +90,7 @@
       '</div>' +
       '<div>' +
         '<div class="card-title" title="' + esc(t.title) + '">' + esc(t.title) + '</div>' +
-        '<div class="card-artist" title="' + esc(t.artist) + '">' + esc(t.artist) + '</div>' +
+        artistLink(t.artist, 'card-artist') +
       '</div>' +
     '</article>';
   }
@@ -94,7 +100,7 @@
       '<span class="idx">' + (index + 1) + '</span>' +
       '<span class="row-main">' +
         '<span class="row-cover">' + AC.coverHtml(t) + '</span>' +
-        '<span style="min-width:0"><span class="row-title">' + esc(t.title) + '</span><span class="row-artist">' + esc(t.artist) + '</span></span>' +
+        '<span style="min-width:0"><span class="row-title">' + esc(t.title) + '</span>' + artistLink(t.artist, 'row-artist') + '</span>' +
       '</span>' +
       '<span class="row-meta row-bpm">' + (bpmOf(t) ? bpmOf(t) + ' BPM' : '—') + '</span>' +
       '<span class="row-meta row-lufs">' + lufsText(t) + '</span>' +
@@ -127,7 +133,7 @@
     var picks = (listened.length ? listened.concat(recent.filter(function (t) { return !t.lastPlayedAt; })) : recent).slice(0, 8);
     var hour = new Date().getHours();
     var greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
-    var filters = '<div class="home-filters"><button class="filter-chip is-active" data-action="nav" data-view="home">Tudo</button><button class="filter-chip" data-action="nav" data-view="library">Músicas</button><button class="filter-chip" data-action="nav" data-view="playlists">Playlists</button><button class="filter-chip" data-action="nav" data-view="radio">Rádio</button></div>';
+    var filters = '<div class="home-filters"><button class="filter-chip is-active" data-action="nav" data-view="home">Tudo</button><button class="filter-chip" data-action="nav" data-view="recommended">Recomendadas</button><button class="filter-chip" data-action="nav" data-view="releases">Novos lançamentos</button><button class="filter-chip" data-action="nav" data-view="recent">Recentes</button><button class="filter-chip" data-action="nav" data-view="playlists">Playlists</button><button class="filter-chip" data-action="nav" data-view="radio">Rádio</button></div>';
     var shortcuts = picks.map(function (t) {
       return '<button class="quick-shortcut" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Tocar ' + esc(t.title) + '">' +
         '<span class="quick-shortcut-cover">' + AC.coverHtml(t) + '</span><span class="quick-shortcut-title">' + esc(t.title) + '</span><span class="quick-shortcut-play" aria-hidden="true">' + icon('play', 16) + '</span></button>';
@@ -137,7 +143,8 @@
       '<header class="hero compact"><h1>' + greeting + '</h1><button class="link" data-action="whats-new">Novidades ' + NEWS_VERSION + '</button></header>' +
       (recent.length ? '<div class="quick-shortcuts">' + shortcuts + '</div>' : emptyHome()) +
       (listened.length ? '<section class="section"><div class="section-head"><h2>Ouvidas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid track-rail">' + listened.slice(0, 8).map(cardHtml).join('') + '</div></section>' : '') +
-      (recent.length ? '<section class="section"><div class="section-head"><h2>Adicionadas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid track-rail">' + recent.map(cardHtml).join('') + '</div></section>' : '') + radio + '</div>';
+      (recent.length ? '<section class="section"><div class="section-head"><h2>Adicionadas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid track-rail">' + recent.map(cardHtml).join('') + '</div></section>' : '') +
+      '<section class="section"><div class="section-head"><h2>Descubra algo novo</h2></div><div class="discovery-shortcuts"><button data-action="nav" data-view="recommended">' + icon('sparkles', 28) + '<span><b>Feitas para você</b><small>Recomendadas a partir do seu som</small></span></button><button data-action="nav" data-view="releases">' + icon('wave', 28) + '<span><b>Novos lançamentos</b><small>Álbuns e singles com data de lançamento</small></span></button></div></section>' + radio + '</div>';
   }
 
   /* ---------------- search ---------------- */
@@ -151,7 +158,7 @@
       '<div class="result-thumb"><img src="' + esc(r.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></div>' +
       '<div class="result-body">' +
         '<div class="result-title">' + esc(r.title) + '</div>' +
-        '<div class="result-sub"><span>' + esc(r.channel) + '</span>' +
+        '<div class="result-sub">' + artistLink(r.channel, '') +
           (r.duration ? '<span>' + AC.fmtTime(r.duration) + '</span>' : '') +
           (r.views ? '<span>' + AC.fmtNum(r.views) + ' views</span>' : '') +
         '</div>' +
@@ -285,7 +292,7 @@
         '<div class="sheet-info">' +
           '<div class="eyebrow">' + (t.album ? esc(t.album) : 'faixa do acervo') + '</div>' +
           '<h2 class="sheet-title">' + esc(t.title) + '</h2>' +
-          '<div class="sheet-artist">' + esc(t.artist) + '</div>' +
+          artistLink(t.artist, 'sheet-artist') +
           '<div class="sheet-badges">' + bits.join('') + '</div>' +
           '<div class="sheet-actions">' +
             '<button class="btn btn-accent" data-action="play-track" data-id="' + esc(t.id) + '">' + icon('play', 15) + ' Tocar</button>' +
@@ -501,6 +508,7 @@
   /* ---------------- search flow ---------------- */
   var searchGeneration = 0;
   var searchRequest = null;
+  AC.searchCatalog = function (query) { return doSearch(query); };
 
   async function doSearch(q) {
     var query = String(q || '').trim();
@@ -661,7 +669,7 @@
   /* ---------------- render ---------------- */
   function updateNav() {
     Array.prototype.forEach.call(document.querySelectorAll('.nav-item, .home-button, .mobile-nav [data-view]'), function (el) {
-      var active = el.getAttribute('data-view') === S.view;
+      var active = el.getAttribute('data-view') === S.view || (el.getAttribute('data-view') === 'recommended' && (S.view === 'explore' || S.view === 'artist'));
       el.classList.toggle('is-active', active);
       if (active) el.setAttribute('aria-current', 'page');
       else el.removeAttribute('aria-current');
@@ -674,7 +682,7 @@
     var tracks = S.tracks.slice().sort(function (a, b) { return new Date(b.lastPlayedAt || b.addedAt || 0) - new Date(a.lastPlayedAt || a.addedAt || 0); });
     root.innerHTML = tracks.slice(0, 16).map(function (t) {
       var current = S.current && S.current.id === t.id;
-      return '<button class="sidebar-track' + (current ? ' is-current' : '') + '" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Ouvir ' + esc(t.title) + '"><span class="sidebar-cover">' + AC.coverHtml(t) + '</span><span class="sidebar-track-copy"><span class="sidebar-track-title">' + esc(t.title) + '</span><span class="sidebar-track-sub">' + esc(t.artist) + '</span></span>' + (current && S.playing ? icon('wave', 16) : '') + '</button>';
+      return '<div role="button" tabindex="0" class="sidebar-track' + (current ? ' is-current' : '') + '" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Ouvir ' + esc(t.title) + '"><span class="sidebar-cover">' + AC.coverHtml(t) + '</span><span class="sidebar-track-copy"><span class="sidebar-track-title">' + esc(t.title) + '</span>' + artistLink(t.artist, 'sidebar-track-sub') + '</span>' + (current && S.playing ? icon('wave', 16) : '') + '</div>';
     }).join('') || '<p class="tiny sidebar-empty">As músicas que você adicionar aparecem aqui.</p>';
   };
 
@@ -683,6 +691,10 @@
   function render() { AC.render(); }
 
   AC.go = function (view) {
+    if (['recommended', 'releases', 'recent'].includes(view)) {
+      S.exploreSection = view;
+      view = 'explore';
+    }
     S.view = view;
     updateNav();
     render();
@@ -696,10 +708,11 @@
     var main = $('view');
     if (!main) return;
     if (S.renderedView === 'radio' && S.view !== 'radio') AC.leaveRadio();
+    if (AC.leaveExplore && ['explore', 'artist'].includes(S.renderedView) && S.view !== S.renderedView) AC.leaveExplore();
     S.renderedView = S.view;
     var html = '';
     if (S.view === 'home') main.setAttribute('aria-label', 'Início');
-    else main.setAttribute('aria-label', S.view === 'radio' ? 'Sua rádio' : S.view === 'library' ? 'Seu acervo' : 'Buscar músicas');
+    else main.setAttribute('aria-label', ({ radio: 'Sua rádio', library: 'Seu acervo', artist: 'Página do artista', explore: 'Explorar músicas', playlists: 'Playlists', settings: 'Configurações' })[S.view] || 'Buscar músicas');
     if (S.view === 'home') html = viewHome();
     else if (S.view === 'search') html = viewSearch();
     else if (S.view === 'library') html = viewLibrary();
@@ -707,12 +720,16 @@
     else if (S.view === 'playlists') html = viewPlaylists();
     else if (S.view === 'playlist') html = viewPlaylist();
     else if (S.view === 'settings') html = viewSettings();
+    else if (S.view === 'explore' && AC.exploreView) html = AC.exploreView(S.exploreSection || 'recommended');
+    else if (S.view === 'artist' && AC.artistView) html = AC.artistView();
     else html = viewHome();
     main.innerHTML = html;
     AC.hydrateIcons(main);
     updateNav();
     AC.renderSidebar();
     if (S.view === 'radio') AC.bindRadio();
+    if (S.view === 'explore' && AC.mountExplore) AC.mountExplore(S.exploreSection || 'recommended');
+    if (S.view === 'artist' && AC.mountArtist) AC.mountArtist(S.artistName);
     if (S.view === 'playlist') {
       if (!playlistTimer) {
         playlistTimer = setInterval(function () {

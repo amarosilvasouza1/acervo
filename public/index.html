@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=8">
-<link rel="stylesheet" href="/mobile.css?v=8">
+<link rel="stylesheet" href="/styles.css?v=9">
+<link rel="stylesheet" href="/mobile.css?v=9">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231ed760'/%3E%3Cpath d='M8 13v6M12 9v14M16 11v10M20 7v18M24 13v6' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -59,6 +59,7 @@
     <nav class="nav" aria-label="Navegação">
       <button class="nav-item is-active" data-action="nav" data-view="home"><span class="nav-ico" data-ico="home"></span><span>Início</span></button>
       <button class="nav-item" data-action="nav" data-view="search"><span class="nav-ico" data-ico="search"></span><span>Buscar</span></button>
+      <button class="nav-item" data-action="nav" data-view="recommended"><span class="nav-ico" data-ico="sparkles"></span><span>Recomendadas</span></button>
       <button class="nav-item" data-action="nav" data-view="radio" title="Sua rádio"><span class="nav-ico" data-ico="radio"></span><span>Rádio</span></button>
       <button class="nav-item" data-action="nav" data-view="library"><span class="nav-ico" data-ico="library"></span><span>Músicas</span></button>
       <button class="nav-item" data-action="nav" data-view="playlists"><span class="nav-ico" data-ico="queue"></span><span>Playlists</span></button>
@@ -82,10 +83,10 @@
 <footer class="player" id="player" aria-label="Reprodutor">
   <div class="player-now">
     <button class="player-cover" id="player-cover" data-action="expand-player" aria-label="Abrir música em reprodução"><span class="player-cover-fallback"></span></button>
-    <button class="player-meta" data-action="expand-player" aria-label="Abrir reprodutor">
-      <span class="player-title" id="player-title">Nada tocando</span>
-      <span class="player-artist" id="player-artist">Escolha uma faixa do acervo</span>
-    </button>
+    <div class="player-meta">
+      <button class="player-title" id="player-title" data-action="expand-player" aria-label="Abrir reprodutor">Nada tocando</button>
+      <button class="player-artist artist-link" id="player-artist" data-action="open-artist" disabled>Escolha uma faixa do acervo</button>
+    </div>
     <button class="icon-btn player-radio" data-action="radio-current" aria-label="Rádio desta faixa" title="Rádio desta faixa" data-ico="radio"></button>
     <button class="icon-btn player-timer" data-action="sleep" aria-label="Timer de sono" title="Timer de sono" data-ico="moon"></button>
     <button class="icon-btn player-connect connect-trigger" data-action="connect-devices" aria-label="Dispositivos disponíveis" title="Dispositivos disponíveis">
@@ -134,9 +135,10 @@
 <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
 <audio id="audio" preload="metadata"></audio>
-<script src="/app.js?v=8" defer></script>
+<script src="/app.js?v=9" defer></script>
 <script src="/radio.js?v=8" defer></script>
 <script src="/connect.js?v=8" defer></script>
-<script src="/views.js?v=8" defer></script>
+<script src="/explore.js?v=9" defer></script>
+<script src="/views.js?v=9" defer></script>
 </body>
 </html>

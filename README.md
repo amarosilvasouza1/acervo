@@ -6,15 +6,13 @@ Repositório: https://github.com/amarosilvasouza1/acervo
 
 ## Capturas
 
-![Acervo Web em tela inteira](docs/web-spotify.png)
-
 ![Acervo no PC](docs/desktop.jpg)
 
-![Novidades do Acervo](docs/novidades.jpg)
+![Acervo Web responsivo](docs/web-spotify.png)
 
 <img src="docs/mobile.png" alt="Acervo no celular" width="320">
 
-![Rádio por similaridade](docs/radio.jpg)
+![Playlists do Acervo](docs/playlists.jpg)
 
 Interface construída a partir do sistema visual descrito em **spotify-design.md**: fundo #000, superfícies #121212/#181818, tinta #fff, apoio #b3b3b3, acento #1ed760, texto sobre acento #111, pills de 1000px, foco visível e suporte a movimento reduzido.
 
@@ -42,10 +40,18 @@ A versão **Web** abre em `/web` e usa a largura real do navegador. No computado
 Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência fica salva no navegador e pode ser trocada a qualquer momento pelo botão de telas no topo do app.
 
 - **/pc** — versão PC: sidebar, fila, player expandido e o fluxo completo de download.
-- **/web** — versão Web: interface de celular com abas inferiores e mini player, exibida em uma moldura no desktop e em tela cheia no celular.
+- **/web** — versão Web: usa a largura do navegador, com biblioteca lateral no computador e navegação inferior no celular.
 - **/escolher** — tela de escolha; use `?choose=1` para ignorar a preferência salva.
 
 O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
+
+## Descobrir músicas e artistas
+
+Na página inicial, as abas **Recomendadas**, **Novos lançamentos** e **Recentes** abrem a área de descoberta. As recomendações consultam o YouTube a partir das músicas ouvidas; Recentes usa o histórico real de reprodução. Lançamentos mostram apenas datas confirmadas nos últimos 90 dias: primeiro dos artistas do acervo e, quando não houver resultados, da seleção editorial Deezer, identificada na tela.
+
+Clique no nome de um artista nas músicas, na busca ou no player para abrir seu perfil. O perfil reúne músicas salvas, faixas populares, discografia, artistas relacionados e, quando confirmada, uma biografia com atribuição à Wikipédia. Os dados externos vêm do catálogo Deezer; nomes e títulos locais ajudam a confirmar a identidade. Se o perfil não for confirmado, o app preserva as músicas locais e avisa. Contagens de fãs identificam sua fonte; não são ouvintes mensais do Acervo.
+
+Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
 ## Novidades 1.3.6
 

@@ -359,6 +359,38 @@ button.connect-device:hover { background: #2a2a2a; }
   .topbar-actions .icon-btn, .topbar-add { min-width: 38px; width: 38px; }
   .quick-shortcut-cover { flex-basis: 44px; width: 44px; height: 56px; }
 }
+@media (max-width: 900px) {
+  .discovery-shortcuts { gap: 12px; }
+  .discovery-shortcuts > button { padding: 16px; min-height: 100px; gap: 12px; align-items: flex-start; flex-direction: column; }
+  .discovery-shortcuts b { font-size: 14px; }
+  .discovery-shortcuts small { font-size: 11px; }
+  .explore-view .view-head { align-items: flex-start; flex-wrap: nowrap; }
+  .explore-view .view-head h1 { font-size: 25px; }
+  .explore-view .view-head .sub { font-size: 12px; }
+  .explore-view .view-head > .btn { min-height: 40px; padding: 0 12px; font-size: 11px; }
+  .explore-tabs { gap: 6px; margin: 0 -16px 12px; padding: 4px 16px 12px; }
+  .explore-tabs .filter-chip { min-height: 40px; padding: 0 14px; font-size: 12px; }
+  .explore-grid, .album-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 12px; }
+  .catalog-card { padding: 0; margin: 0; }
+  .catalog-title { font-size: 13px; margin-top: 10px; }
+  .catalog-artist { font-size: 12px; min-height: 28px; }
+  .catalog-play { opacity: 1; transform: none; width: 40px; height: 40px; right: 8px; bottom: 8px; }
+  .catalog-meta { font-size: 11px; }
+  .catalog-source { min-height: 28px; }
+  .artist-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 16px; }
+  .artist-card { padding: 0; }
+  .artist-section { margin-top: 32px; }
+  .artist-section .section-head h2 { font-size: 22px; }
+  .artist-hero { gap: 18px; align-items: flex-start; min-height: 0; flex-direction: column; padding-top: 8px; }
+  .artist-hero-picture { flex-basis: auto; width: 160px; align-self: center; margin-bottom: 8px; }
+  .artist-hero h1 { font-size: 38px; }
+  .artist-hero-actions { gap: 16px; }
+  .artist-track-row { grid-template-columns: 16px 40px minmax(0, 1fr) 40px; gap: 10px; padding: 8px 0; }
+  .artist-track-row > .catalog-meta { display: none; }
+  .artist-track-art, .artist-track-cover { width: 40px; height: 40px; }
+  .artist-track-title { font-size: 13px; }
+  .artist-biography { padding: 20px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .home-view .section .grid { scroll-behavior: auto; scroll-snap-type: none; }
 }
