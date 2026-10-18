@@ -47,11 +47,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 
 1. Mantenha o Tailscale instalado e conectado no PC e no celular, com a mesma conta.
 2. No PC, rode **iniciar-externo.cmd**. Ele publica o Acervo em HTTPS na porta 10000 da tailnet e inicia o servidor em modo nuvem.
-3. Abra o endereço mostrado (por exemplo, https://seu-pc.sua-tailnet.ts.net:10000), entre com a senha salva em **externo.env** e gere o QR em **Conectar dispositivos**.
-4. No celular, com o Tailscale ligado, abra o APK e escaneie o QR. Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
+3. Abra o endereço mostrado. O Acervo reconhece sua identidade do Tailscale e entra direto, sem senha; se quiser parear o APK, gere o QR em **Conectar dispositivos**.
+4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. A senha em **externo.env** é local e está no .gitignore; mantenha esse arquivo privado. Se o navegador pedir a senha, rode **copiar-senha.cmd** e cole no campo. O celular não precisa dela: ele entra pelo QR code.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
