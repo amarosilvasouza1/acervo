@@ -6,11 +6,13 @@ Repositório: https://github.com/amarosilvasouza1/acervo
 
 ## Capturas
 
-![Acervo no desktop](docs/desktop.jpg)
+![Acervo no PC](docs/desktop.jpg)
 
-![Rádio por similaridade](docs/radio.jpg)
+![Novidades da versão 1.3.1](docs/novidades.jpg)
 
 <img src="docs/mobile.png" alt="Acervo no celular" width="320">
+
+![Rádio por similaridade](docs/radio.jpg)
 
 Interface construída a partir do sistema visual descrito em **spotify-design.md**: fundo #000, superfícies #121212/#181818, tinta #fff, apoio #b3b3b3, acento #1ed760, texto sobre acento #111, pills de 1000px, foco visível e suporte a movimento reduzido.
 
