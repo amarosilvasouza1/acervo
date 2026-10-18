@@ -26,6 +26,7 @@ const MODE = process.env.ACERVO_MODE || 'local';
 if (!['local', 'cloud'].includes(MODE)) throw new Error('ACERVO_MODE deve ser local ou cloud.');
 const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: MODE,
   publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
+  trustTailscale: process.env.ACERVO_TRUST_TAILSCALE === '1',
   stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
 
 const MIME = {
