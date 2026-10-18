@@ -51,7 +51,7 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o APK e escaneie o QR. Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. A senha em **externo.env** é local e está no .gitignore; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. A senha em **externo.env** é local e está no .gitignore; mantenha esse arquivo privado. Se o navegador pedir a senha, rode **copiar-senha.cmd** e cole no campo. O celular não precisa dela: ele entra pelo QR code.
 
 ## Android independente e conexão entre dispositivos
 
