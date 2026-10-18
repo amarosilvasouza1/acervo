@@ -7,6 +7,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
@@ -40,11 +41,17 @@ public final class PlaybackService extends Service {
     private boolean playing;
     private PowerManager.WakeLock wake;
     private WifiManager.WifiLock wifi;
+    private static Bitmap artwork;
 
     static void attach(Controls value) { controls = value; }
     static void detach(Controls value) { if (controls == value) controls = null; }
 
     static void update(Context context, String title, String artist, boolean playing) {
+        update(context, title, artist, playing, null);
+    }
+
+    static void update(Context context, String title, String artist, boolean playing, Bitmap art) {
+        artwork = art;
         Intent intent = new Intent(context, PlaybackService.class).setAction(ACTION_UPDATE)
                 .putExtra("title", title == null ? "" : title)
                 .putExtra("artist", artist == null ? "" : artist)
@@ -64,6 +71,8 @@ public final class PlaybackService extends Service {
             NotificationChannel channel = new NotificationChannel(CHANNEL, "Reprodução", NotificationManager.IMPORTANCE_LOW);
             channel.setDescription("Controles do player do Acervo");
             channel.setShowBadge(false);
+            channel.setSound(null, null);
+            channel.enableVibration(false);
             manager.createNotificationChannel(channel);
         }
         session = new MediaSession(this, "Acervo");
@@ -126,12 +135,12 @@ public final class PlaybackService extends Service {
         PendingIntent content = PendingIntent.getActivity(this, 1, launch,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Notification.Action previous = new Notification.Action.Builder(
-                Icon.createWithResource(this, android.R.drawable.ic_media_previous), "Anterior", action(ACTION_PREVIOUS, 2)).build();
+                Icon.createWithResource(this, R.drawable.ic_prev_spot), "Anterior", action(ACTION_PREVIOUS, 2)).build();
         Notification.Action toggle = new Notification.Action.Builder(
-                Icon.createWithResource(this, playing ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play),
+                Icon.createWithResource(this, playing ? R.drawable.ic_pause_spot : R.drawable.ic_play_spot),
                 playing ? "Pausar" : "Reproduzir", action(ACTION_TOGGLE, 3)).build();
         Notification.Action next = new Notification.Action.Builder(
-                Icon.createWithResource(this, android.R.drawable.ic_media_next), "Próxima", action(ACTION_NEXT, 4)).build();
+                Icon.createWithResource(this, R.drawable.ic_next_spot), "Próxima", action(ACTION_NEXT, 4)).build();
 
         Notification.Builder builder = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
@@ -139,6 +148,8 @@ public final class PlaybackService extends Service {
                 .setContentText(artist.isEmpty() ? "Tocando neste celular" : artist)
                 .setContentIntent(content)
                 .setDeleteIntent(action(ACTION_STOP, 9))
+                .setSubText("Acervo")
+                .setCategory(Notification.CATEGORY_TRANSPORT)
                 .setOngoing(playing)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
@@ -148,14 +159,17 @@ public final class PlaybackService extends Service {
                 .addAction(next)
                 .setStyle(new Notification.MediaStyle().setMediaSession(session.getSessionToken()).setShowActionsInCompactView(0, 1, 2));
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
+        if (artwork != null) builder.setLargeIcon(artwork);
+        else builder.setLargeIcon(Icon.createWithResource(this, R.mipmap.ic_launcher));
 
         startForeground(NOTIFICATION_ID, builder.build());
         if (playing) acquireLocks(); else releaseLocks();
 
-        session.setMetadata(new MediaMetadata.Builder()
+        MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title.isEmpty() ? "Acervo" : title)
-                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist.isEmpty() ? "Tocando neste celular" : artist)
-                .build());
+                .putString(MediaMetadata.METADATA_KEY_ARTIST, artist.isEmpty() ? "Tocando neste celular" : artist);
+        if (artwork != null) metadata.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, artwork);
+        session.setMetadata(metadata.build());
         long actions = PlaybackState.ACTION_PLAY | PlaybackState.ACTION_PAUSE | PlaybackState.ACTION_PLAY_PAUSE
                 | PlaybackState.ACTION_SKIP_TO_NEXT | PlaybackState.ACTION_SKIP_TO_PREVIOUS | PlaybackState.ACTION_STOP;
         session.setPlaybackState(new PlaybackState.Builder().setActions(actions)

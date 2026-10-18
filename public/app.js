@@ -29,7 +29,8 @@
     moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5z"/>',
     device: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 21h8M12 16v5"/>',
     phone: '<rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 5h4M11 18.5h2"/>',
-    wave: '<path d="M4 10v4M8 6v12M12 8v8M16 4v16M20 9v6"/>'
+    wave: '<path d="M4 10v4M8 6v12M12 8v8M16 4v16M20 9v6"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>'
   };
 
   var state = AC.state = {
@@ -57,7 +58,33 @@
     filter: '',
     queueOpen: false,
     sleepMinutes: 0,
+    playlists: [],
+    playlistId: null,
+    settings: null,
     modals: []
+  };
+
+  var SETTINGS_KEY = 'acervo:settings';
+  AC.getSettings = function () {
+    var defaults = { autoSave: false, offlineFallback: false, resume: true };
+    try {
+      var saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+      return Object.assign(defaults, saved && typeof saved === 'object' ? saved : {});
+    } catch (e) { return defaults; }
+  };
+  AC.setSetting = function (key, value) {
+    var settings = AC.getSettings();
+    settings[key] = !!value;
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+    state.settings = settings;
+    if (key === 'offlineFallback' && window.AcervoAndroid && window.AcervoAndroid.setOfflineFallback) {
+      try { window.AcervoAndroid.setOfflineFallback(!!value); } catch (e) {}
+    }
+    return settings;
+  };
+  AC.syncNativeSettings = function () {
+    if (!window.AcervoAndroid || !window.AcervoAndroid.setOfflineFallback) return;
+    try { window.AcervoAndroid.setOfflineFallback(!!AC.getSettings().offlineFallback); } catch (e) {}
   };
 
   function $(id) { return document.getElementById(id); }
@@ -255,7 +282,7 @@
     var bridge = window.AcervoAndroid;
     if (!bridge || typeof bridge.nowPlaying !== 'function') return;
     try {
-      if (state.current) bridge.nowPlaying(state.current.title || '', state.current.artist || '', !!state.playing);
+      if (state.current) bridge.nowPlaying(state.current.title || '', state.current.artist || '', !!state.playing, state.current.hasCover ? '/api/cover/' + encodeURIComponent(state.current.id) : '');
     } catch (e) {}
   }
 
@@ -333,6 +360,10 @@
     });
     paintPlayer();
     if (typeof AC.onTrackChange === 'function') AC.onTrackChange(track);
+    if (AC.getSettings().autoSave && window.AcervoAndroid && window.AcervoAndroid.saveOffline && !track.autoSaved) {
+      track.autoSaved = true;
+      try { window.AcervoAndroid.saveOffline(track.id, track.title, track.artist, Math.round(track.duration || 0)); } catch (e) {}
+    }
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new window.MediaMetadata({
         title: track.title,
@@ -363,6 +394,7 @@
   };
 
   AC.restoreLast = function () {
+    if (!AC.getSettings().resume) return false;
     var saved = null;
     try { saved = JSON.parse(localStorage.getItem('acervo:resume') || 'null'); } catch (e) {}
     if (!saved || !saved.id || !saved.at || Date.now() - saved.at > 7 * 86400000) return false;
@@ -665,6 +697,30 @@
   };
 
   /* ---------- jobs ---------- */
+  AC.loadPlaylists = async function () {
+    try {
+      var data = await AC.api('/api/playlists');
+      state.playlists = Array.isArray(data.playlists) ? data.playlists : [];
+    } catch (e) { state.playlists = state.playlists || []; }
+    return state.playlists;
+  };
+
+  AC.importPlaylist = async function (url) {
+    AC.toast('Lendo a playlist…');
+    try {
+      var result = await AC.api('/api/playlists/import', { method: 'POST', body: JSON.stringify({ url: url }) });
+      await AC.loadPlaylists();
+      state.view = 'playlist';
+      state.playlistId = result.playlist.id;
+      render();
+      AC.toast(result.total + ' músicas na fila. O download continua no computador.');
+      return result;
+    } catch (error) {
+      AC.toast('Playlist: ' + error.message, 'error');
+      throw error;
+    }
+  };
+
   AC.startImport = async function (payload) {
     var key = payload.videoId || payload.url || payload.query;
     try {

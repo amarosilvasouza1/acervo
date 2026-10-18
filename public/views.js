@@ -5,11 +5,14 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.3.3';
+  var NEWS_VERSION = '1.3.4';
   var NEWS = [
     ['Tela desligada', 'No APK 1.3.2 a música continua com a tela apagada: o serviço segura CPU e Wi-Fi e mantém a notificação ativa.'],
     ['Notificação no modo conectado', 'Play, pausa e próxima também aparecem quando o som vem do Acervo no PC, não só no modo independente.'],
     ['Músicas no celular', 'Salve uma faixa ou a biblioteca inteira em MP3 e ouça em Ouvir offline, mesmo sem PC e sem internet.'],
+    ['Notificação com capa', 'O player na notificação ganhou capa da faixa e ícones de play/pause no estilo Spotify.'],
+    ['Configurações', 'Escolha baixar ao tocar, abrir as músicas salvas se a conexão cair e continuar de onde parou.'],
+    ['Playlists do YouTube', 'Cole um link de playlist: todas as faixas entram na fila de download e a playlist fica salva no app/web.'],
     ['Aleatório inteligente', 'A fila embaralhada intercala artistas e evita repetir o mesmo nome em sequência.'],
     ['Rádio que já baixa a próxima', 'No modo rádio do celular, a próxima faixa é baixada enquanto a atual toca e emenda sozinha.'],
     ['Conexão salva', 'O APK abre direto no último Acervo conectado, sem repetir o QR code.'],
@@ -355,13 +358,86 @@
     loadRecs(id);
   }
 
+  /* ---------------- playlists e configurações ---------------- */
+  function isPlaylistUrl(value) {
+    return /[?&]list=/.test(value) || /\/playlist(\?|$)/.test(value);
+  }
+
+  function trackForEntry(entry) {
+    return S.tracks.find(function (t) { return t.videoId === entry.videoId || t.id === entry.videoId; });
+  }
+
+  function viewPlaylists() {
+    var list = S.playlists || [];
+    var head = '<div class="view-head"><div><h1>Playlists</h1><p class="sub">Cole um link de playlist do YouTube para baixar tudo e guardar aqui.</p></div>' +
+      '<div class="head-actions"><button class="btn btn-accent btn-sm" data-action="open-download">' + icon('link', 15) + ' Importar playlist</button></div></div>';
+    if (!list.length) {
+      return '<div class="view">' + head +
+        '<div class="empty"><div class="empty-mark">' + icon('queue', 24) + '</div><h2>Suas playlists ficam aqui</h2>' +
+        '<p>Cole o link de uma playlist do YouTube. O Acervo baixa as faixas em sequência e mantém a lista para tocar depois.</p>' +
+        '<button class="btn btn-accent" data-action="open-download">Importar uma playlist</button></div></div>';
+    }
+    var cards = list.map(function (p) {
+      var done = p.entries.filter(function (entry) { return !!trackForEntry(entry); }).length;
+      var first = p.entries[0];
+      return '<article class="card playlist-card" role="button" tabindex="0" data-action="open-playlist" data-id="' + esc(p.id) + '">' +
+        '<div class="card-cover">' + (first ? '<img src="' + esc(first.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '<span class="card-cover-fallback"></span>') + '</div>' +
+        '<div><div class="card-title">' + esc(p.name) + '</div><div class="tiny">' + done + ' de ' + p.entries.length + ' no acervo</div></div></article>';
+    }).join('');
+    return '<div class="view">' + head + '<div class="grid">' + cards + '</div></div>';
+  }
+
+  function viewPlaylist() {
+    var p = (S.playlists || []).find(function (item) { return item.id === S.playlistId; });
+    if (!p) {
+      return '<div class="view"><div class="empty"><h2>Playlist não encontrada</h2><button class="btn btn-ghost" data-action="nav" data-view="playlists">Voltar</button></div></div>';
+    }
+    var done = p.entries.filter(function (entry) { return !!trackForEntry(entry); }).length;
+    var rows = p.entries.map(function (entry, index) {
+      var track = trackForEntry(entry);
+      if (track) return rowHtml(track, index);
+      return '<div class="row"><span class="idx">' + (index + 1) + '</span>' +
+        '<span class="row-main"><span class="row-cover"><img src="' + esc(entry.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></span>' +
+        '<span style="min-width:0"><span class="row-title">' + esc(entry.title) + '</span><span class="row-artist">' + esc(entry.artist || '') + '</span></span></span>' +
+        '<span class="row-end"><span class="pill">Na fila</span></span></div>';
+    }).join('');
+    return '<div class="view"><div class="view-head"><div><button class="link" data-action="nav" data-view="playlists">← Playlists</button><h1>' + esc(p.name) + '</h1>' +
+      '<p class="sub">' + done + ' de ' + p.entries.length + ' já no acervo</p></div>' +
+      '<div class="head-actions"><button class="btn btn-ghost btn-sm" data-action="refresh-playlist">' + icon('repeat', 14) + ' Atualizar</button>' +
+      '<button class="btn btn-accent btn-sm" data-action="import-playlist-all" data-id="' + esc(p.id) + '">' + icon('download', 14) + ' Baixar todas</button></div></div>' +
+      '<div class="rows">' + rows + '</div></div>';
+  }
+
+  function settingRow(key, title, description) {
+    var settings = AC.getSettings();
+    return '<label class="setting-row"><span><strong>' + esc(title) + '</strong><small>' + esc(description) + '</small></span>' +
+      '<input type="checkbox" data-action="toggle-setting" data-setting="' + key + '"' + (settings[key] ? ' checked' : '') + '></label>';
+  }
+
+  function viewSettings() {
+    var bridge = !!window.AcervoAndroid;
+    return '<div class="view"><div class="view-head"><div><h1>Configurações</h1><p class="sub">Escolha como o Acervo baixa, guarda e retoma suas músicas.</p></div></div>' +
+      '<div class="settings-grid">' +
+        '<section class="panel"><h3>No celular</h3>' +
+          settingRow('autoSave', 'Baixar ao tocar', 'Salva uma cópia no celular sempre que uma faixa começar a tocar. Requer o app Android.') +
+          settingRow('offlineFallback', 'Abrir músicas salvas se a conexão cair', 'Se o Acervo não carregar, tenta abrir a biblioteca offline automaticamente.') +
+          '<button class="btn btn-ghost" data-action="save-all-offline"' + (bridge ? '' : ' disabled') + '>' + icon('download', 15) + ' Salvar biblioteca agora</button>' +
+          (bridge ? '<p class="tiny" style="margin-top:10px">Os arquivos ficam na área privada do app e tocam sem PC.</p>' : '<p class="tiny" style="margin-top:10px">Estas opções de armazenamento aparecem quando o app Android está conectado.</p>') +
+        '</section>' +
+        '<section class="panel"><h3>Reprodução</h3>' +
+          settingRow('resume', 'Continuar de onde parou', 'Restaura a última faixa e a posição ao abrir o app.') +
+          '<p class="tiny" style="margin-top:10px">O timer de sono e o aleatório inteligente ficam no player.</p>' +
+        '</section>' +
+      '</div></div>';
+  }
+
   /* ---------------- download modal ---------------- */
   function openDownload() {
     AC.openModal(
       '<div class="modal-head"><div><h2>Baixar do YouTube</h2><p>Cole o link do vídeo ou digite o nome da música. O áudio vira MP3, entra no acervo com capa e é normalizado em −14 LUFS.</p></div>' +
       '<button class="icon-btn modal-close" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' +
       '<div class="modal-field">' + icon('link', 18) + '<input id="dl-input" placeholder="https://youtube.com/watch?v=... ou nome da música" autocomplete="off"></div>' +
-      '<p class="modal-hint">Dica: você pode colar vários links? Envie um por vez — a fila processa na ordem. Use apenas conteúdo que você tem direito de baixar.</p>' +
+      '<p class="modal-hint">Cole também um link de playlist: o Acervo cria a playlist e baixa todas as faixas em sequência. Use apenas conteúdo que você tem direito de baixar.</p>' +
       '<div class="modal-actions"><button class="btn btn-quiet" data-action="close-modal">Cancelar</button><button class="btn btn-accent" data-action="download-submit">' + icon('download', 16) + ' Baixar</button></div>'
     );
     setTimeout(function () { var i = $('dl-input'); if (i) i.focus(); }, 40);
@@ -371,6 +447,11 @@
     var input = $('dl-input');
     var value = input ? input.value.trim() : '';
     if (!value) return;
+    if (isPlaylistUrl(value)) {
+      AC.closeModals();
+      AC.importPlaylist(value);
+      return;
+    }
     var isLink = /youtu\.?be|youtube\.com/i.test(value);
     AC.closeModals();
     if (isLink) {
@@ -465,6 +546,31 @@
         return;
       }
       case 'open-track': openTrack(id); return;
+      case 'open-playlist': S.playlistId = id; S.view = 'playlist'; render(); return;
+      case 'refresh-playlist':
+        (async function () {
+          await AC.loadPlaylists();
+          try { await AC.loadLibrary({ silent: true }); } catch (e) {}
+          render();
+        })();
+        return;
+      case 'import-playlist-all':
+        (async function () {
+          AC.toast('Enfileirando as faixas da playlist…');
+          try {
+            var result = await AC.api('/api/playlists/' + encodeURIComponent(id) + '/import', { method: 'POST' });
+            await AC.loadPlaylists();
+            render();
+            AC.toast(result.total + ' músicas na fila.');
+          } catch (error) { AC.toast(error.message, 'error'); }
+        })();
+        return;
+      case 'toggle-setting': {
+        var key = el.getAttribute('data-setting');
+        AC.setSetting(key, el.checked);
+        AC.toast('Configuração salva');
+        return;
+      }
       case 'save-offline': {
         var track = AC.trackById(id);
         if (track && window.AcervoAndroid && window.AcervoAndroid.saveOffline) {
@@ -541,6 +647,8 @@
     }).join('') || '<p class="tiny sidebar-empty">As músicas que você adicionar aparecem aqui.</p>';
   };
 
+  var playlistTimer = null;
+
   function render() { AC.render(); }
 
   AC.go = function (view) {
@@ -565,12 +673,27 @@
     else if (S.view === 'search') html = viewSearch();
     else if (S.view === 'library') html = viewLibrary();
     else if (S.view === 'radio') html = viewRadio();
+    else if (S.view === 'playlists') html = viewPlaylists();
+    else if (S.view === 'playlist') html = viewPlaylist();
+    else if (S.view === 'settings') html = viewSettings();
     else html = viewHome();
     main.innerHTML = html;
     AC.hydrateIcons(main);
     updateNav();
     AC.renderSidebar();
     if (S.view === 'radio') AC.bindRadio();
+    if (S.view === 'playlist') {
+      if (!playlistTimer) {
+        playlistTimer = setInterval(function () {
+          AC.loadPlaylists().then(function () { return AC.loadLibrary({ silent: true }); }).then(function () {
+            if (S.view === 'playlist') render();
+          }).catch(function () {});
+        }, 8000);
+      }
+    } else if (playlistTimer) {
+      clearInterval(playlistTimer);
+      playlistTimer = null;
+    }
     var conn = $('conn-text');
     if (conn) conn.textContent = (S.stats.tracks || 0) + ' faixas · local';
     var input = $('search-input');
@@ -614,7 +737,9 @@
       if (conn) conn.textContent = health.tracks + ' faixas · local';
     } catch (e) {}
     try { await AC.loadLibrary({ silent: true }); } catch (e) { if (e.status !== 401) AC.toast('Servidor indisponível. Inicie com node server.js', 'error'); }
+    try { await AC.loadPlaylists(); } catch (e) {}
     }
+    AC.syncNativeSettings();
     var restored = false;
     try { restored = AC.restoreLast && AC.restoreLast(); } catch (e) {}
     render();
@@ -630,6 +755,12 @@
     }
     var scrim = $('scrim');
     if (scrim) scrim.addEventListener('click', function () { AC.closeModals(); });
+    document.addEventListener('change', function (e) {
+      var target = e.target;
+      if (target && target.getAttribute && target.getAttribute('data-setting')) {
+        AC.setSetting(target.getAttribute('data-setting'), target.checked);
+      }
+    });
     document.addEventListener('click', function (e) {
       if (e.target.closest && e.target.closest('.sidebar') && window.innerWidth <= 900) {
         if (e.target.closest('[data-action="nav"]')) document.body.classList.remove('nav-open');

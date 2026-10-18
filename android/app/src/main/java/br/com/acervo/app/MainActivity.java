@@ -7,6 +7,8 @@ import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -63,6 +65,10 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     private boolean failed;
     private boolean autoOpened;
     private boolean askedNotifications;
+    private boolean offlineOpened;
+    private Bitmap lastCover;
+    private String lastCoverUrl;
+    private String coverRequest;
     private Runnable loadTimeout;
 
     @Override public void onCreate(Bundle state) {
@@ -380,6 +386,11 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         add(panel, offline, 10);
         connectionError = panel;
         page.addView(panel, new FrameLayout.LayoutParams(-1, -1));
+        if (!offlineOpened && preferences.getBoolean("offline_fallback", false)) {
+            offlineOpened = true;
+            toast("Conexão indisponível. Abrindo as músicas salvas no celular.");
+            startActivity(new Intent(this, StandaloneActivity.class));
+        }
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
@@ -418,6 +429,25 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     @Override public void onNext() { js("AC.next(false)"); }
     @Override public void onPrevious() { js("AC.prev()"); }
     @Override public void onClose() { js("if (AC.state.playing) AC.toggle();"); }
+
+    private Bitmap fetchCover(String path) {
+        try {
+            String target = path.startsWith("http") ? path : selectedOrigin + path;
+            String cookie = CookieManager.getInstance().getCookie(selectedOrigin);
+            HttpURLConnection connection = (HttpURLConnection) new URL(target).openConnection();
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(15000);
+            if (cookie != null && !cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
+            if (connection.getResponseCode() != 200) return null;
+            try (InputStream input = connection.getInputStream()) {
+                return BitmapFactory.decodeStream(input);
+            } finally {
+                connection.disconnect();
+            }
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
 
     private boolean saveOne(String id, String title, String artist, int duration) throws Exception {
         if (id == null || id.isEmpty()) return false;
@@ -466,7 +496,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
             new Thread(() -> {
                 try {
                     boolean saved = saveOne(id, title, artist, duration);
-                    toastUi(saved ? "Salva no celular. Abra Ouvir offline para tocar sem o PC." : "Essa música já está no celular.");
+                    if (saved) toastUi("Salva no celular. Abra Ouvir offline para tocar sem o PC.");
                 } catch (Exception failure) {
                     toastUi("Não foi possível salvar: " + failure.getMessage());
                 }
@@ -493,14 +523,40 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
             runOnUiThread(() -> startActivity(new Intent(MainActivity.this, StandaloneActivity.class)));
         }
 
+        @JavascriptInterface public void setOfflineFallback(boolean value) {
+            preferences.edit().putBoolean("offline_fallback", value).apply();
+        }
+
         @JavascriptInterface public void nowPlaying(String title, String artist, boolean playing) {
+            nowPlaying(title, artist, playing, null);
+        }
+
+        @JavascriptInterface public void nowPlaying(final String title, final String artist, final boolean playing, final String coverUrl) {
             runOnUiThread(() -> {
                 if (playing && !askedNotifications && Build.VERSION.SDK_INT >= 33
                         && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                     askedNotifications = true;
                     requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
                 }
-                PlaybackService.update(MainActivity.this, title, artist, playing);
+                if (coverUrl == null || coverUrl.isEmpty()) {
+                    PlaybackService.update(MainActivity.this, title, artist, playing, null);
+                    return;
+                }
+                if (coverUrl.equals(lastCoverUrl) && lastCover != null) {
+                    PlaybackService.update(MainActivity.this, title, artist, playing, lastCover);
+                    return;
+                }
+                PlaybackService.update(MainActivity.this, title, artist, playing, lastCover);
+                coverRequest = coverUrl;
+                new Thread(() -> {
+                    Bitmap loaded = fetchCover(coverUrl);
+                    runOnUiThread(() -> {
+                        if (!coverUrl.equals(coverRequest)) return;
+                        lastCoverUrl = coverUrl;
+                        lastCover = loaded;
+                        PlaybackService.update(MainActivity.this, title, artist, playing, loaded);
+                    });
+                }).start();
             });
         }
     }

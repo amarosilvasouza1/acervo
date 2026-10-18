@@ -5,9 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
-import { searchYouTube, videoInfo, downloadAudio, parseVideoId } from './lib/yt.js';
+import { searchYouTube, videoInfo, downloadAudio, parseVideoId, playlistInfo } from './lib/yt.js';
 import { probe, measureLoudness, normalizeTo, extractFeatures, loudnessOf } from './lib/audio.js';
 import * as Library from './lib/library.js';
+import * as Playlists from './lib/playlists.js';
 import { runRadio, validateRadioInput } from './lib/radio.js';
 import { createConnectManager } from './lib/connect.js';
 
@@ -18,7 +19,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 7, versionName: '1.3.3' };
+const ANDROID_VERSION = { versionCode: 8, versionName: '1.3.4' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -493,6 +494,59 @@ const server = http.createServer(async function (req, res) {
       if (!body.videoId && !body.url && !body.query) return sendJson(res, 400, { error: 'Informe um link ou uma busca.' });
       const job = enqueueImport(body);
       return sendJson(res, 202, { jobId: job.id, status: job.status });
+    }
+    if (req.method === 'POST' && pathname === '/api/playlist/resolve') {
+      const body = await readBody(req);
+      try {
+        return sendJson(res, 200, await playlistInfo(body.url));
+      } catch (error) {
+        return sendJson(res, 422, { error: String(error.message || error) });
+      }
+    }
+    if (req.method === 'POST' && pathname === '/api/playlists') {
+      const body = await readBody(req);
+      try {
+        const playlist = await Playlists.create({ name: body.name, sourceUrl: body.sourceUrl, entries: body.entries });
+        return sendJson(res, 201, { playlist: playlist });
+      } catch (error) {
+        return sendJson(res, 422, { error: String(error.message || error) });
+      }
+    }
+    if (req.method === 'POST' && pathname === '/api/playlists/import') {
+      const body = await readBody(req);
+      try {
+        const info = await playlistInfo(body.url);
+        const playlist = await Playlists.create({ name: body.name || info.title, sourceUrl: body.url, entries: info.entries });
+        const jobs = playlist.entries.map(function (entry) {
+          return enqueueImport({ videoId: entry.videoId, meta: {
+            title: entry.title, channel: entry.artist, duration: entry.duration,
+            thumbnails: entry.thumbnail ? [{ url: entry.thumbnail }] : []
+          } }).id;
+        });
+        return sendJson(res, 202, { playlist: playlist, jobs: jobs, total: info.total, truncated: info.truncated });
+      } catch (error) {
+        return sendJson(res, 422, { error: String(error.message || error) });
+      }
+    }
+    if (req.method === 'POST' && pathname.startsWith('/api/playlists/') && pathname.endsWith('/import')) {
+      const id = pathname.split('/')[3];
+      const playlist = await Playlists.get(id);
+      if (!playlist) return sendJson(res, 404, { error: 'Playlist nao encontrada.' });
+      const jobs = playlist.entries.map(function (entry) {
+        return enqueueImport({ videoId: entry.videoId, meta: {
+          title: entry.title, channel: entry.artist, duration: entry.duration,
+          thumbnails: entry.thumbnail ? [{ url: entry.thumbnail }] : []
+        } }).id;
+      });
+      return sendJson(res, 202, { jobs: jobs, total: jobs.length });
+    }
+    if (req.method === 'GET' && pathname === '/api/playlists') {
+      return sendJson(res, 200, { playlists: await Playlists.all() });
+    }
+    if (req.method === 'DELETE' && pathname.startsWith('/api/playlists/')) {
+      const id = pathname.split('/').pop();
+      const removed = await Playlists.remove(id);
+      return sendJson(res, removed ? 200 : 404, { removed: removed });
     }
     if (req.method === 'GET' && pathname.startsWith('/api/jobs/')) {
       const id = pathname.split('/').pop();
