@@ -5,11 +5,12 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.3.4';
+  var NEWS_VERSION = '1.3.5';
   var NEWS = [
     ['Tela desligada', 'No APK 1.3.2 a música continua com a tela apagada: o serviço segura CPU e Wi-Fi e mantém a notificação ativa.'],
     ['Notificação no modo conectado', 'Play, pausa e próxima também aparecem quando o som vem do Acervo no PC, não só no modo independente.'],
     ['Músicas no celular', 'Salve uma faixa ou a biblioteca inteira em MP3 e ouça em Ouvir offline, mesmo sem PC e sem internet.'],
+    ['Sincronizar mais rápido', 'Ao sincronizar, o celular copia os MP3 que já estão no PC, sem baixar tudo do YouTube de novo.'],
     ['Notificação com capa', 'O player na notificação ganhou capa da faixa e ícones de play/pause no estilo Spotify.'],
     ['Configurações', 'Escolha baixar ao tocar, abrir as músicas salvas se a conexão cair e continuar de onde parou.'],
     ['Playlists do YouTube', 'Cole um link de playlist: todas as faixas entram na fila de download e a playlist fica salva no app/web.'],

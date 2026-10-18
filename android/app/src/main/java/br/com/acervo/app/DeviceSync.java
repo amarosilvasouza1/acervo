@@ -12,6 +12,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -58,7 +60,7 @@ public final class DeviceSync {
         volatile boolean transferring;
         ProgressDialog dialog;
         MobileLibrary library;
-        final Map<String, String> pull = new LinkedHashMap<>();
+        final Map<String, JSONObject> pull = new LinkedHashMap<>();
         final Map<String, String> push = new LinkedHashMap<>();
         final List<String> errors = new ArrayList<>();
         int incompatible;
@@ -92,7 +94,7 @@ public final class DeviceSync {
                         String id = track == null ? "" : track.optString("videoId");
                         if (!validId(id)) { incompatible++; continue; }
                         if (remoteIds.add(id) && !localIds.contains(id)) {
-                            pull.put(id, title(track.optString("title"), id));
+                            pull.put(id, track);
                         }
                     }
                     for (MobileLibrary.Track track : local) {
@@ -108,8 +110,8 @@ public final class DeviceSync {
                                     + (incompatible > 0 ? "\n\n" + incompatible + " faixas do computador nao possuem um identificador compativel e foram ignoradas." : ""));
                             return;
                         }
-                        String description = "Baixar no celular: " + pull.size() + " musicas.\nEnviar para baixar no computador/servidor: " + push.size() + " musicas."
-                                + "\n\nO celular baixa sua propria copia pela internet. O computador recebe pedidos de download. Nenhuma musica sera apagada."
+                        String description = "Copiar do PC para o celular: " + pull.size() + " musicas.\nEnviar para baixar no computador/servidor: " + push.size() + " musicas."
+                                + "\n\nAs musicas que ja estao no PC sao copiadas direto, sem baixar do YouTube de novo. O computador recebe pedidos apenas das musicas que so existem no celular. Nenhuma musica sera apagada."
                                 + "\n\nA sincronizacao precisa desta conexao ativa; depois, as copias salvas no celular tocam com o PC desligado."
                                 + (incompatible > 0 ? "\n\n" + incompatible + " faixas sem identificador compativel serao ignoradas." : "");
                         try {
@@ -134,28 +136,20 @@ public final class DeviceSync {
             worker = new Thread(() -> {
                 try {
                     int index = 0;
-                    for (Map.Entry<String, String> song : pull.entrySet()) {
+                    for (Map.Entry<String, JSONObject> song : pull.entrySet()) {
                         ensureRunning();
                         index++;
-                        final String stage = "Salvando no celular (" + index + "/" + pull.size() + ")\n" + song.getValue();
+                        String label = title(song.getValue().optString("title"), song.getKey());
+                        final String stage = "Copiando do PC (" + index + "/" + pull.size() + ")\n" + label;
                         updateProgress(stage);
                         try {
                             if (library.get(song.getKey()) != null) { alreadyPresent++; continue; }
-                            MobileSource.Song resolved = MobileSource.resolve(song.getKey());
-                            ensureRunning();
-                            library.download(resolved, (received, total) -> {
-                                if (stopped()) throw new Cancelled();
-                                long now = System.currentTimeMillis();
-                                if (now - lastProgressAt >= 250 || (total > 0 && received == total)) {
-                                    lastProgressAt = now;
-                                    updateProgress(stage + "\n" + size(received) + (total > 0 ? " de " + size(total) : ""));
-                                }
-                            });
+                            copyFromPc(song.getKey(), song.getValue(), stage);
                             pulled++;
                         } catch (Exception failure) {
                             if (stopped()) throw new Cancelled();
                             pullFailed++;
-                            recordError(song.getValue(), failure);
+                            recordError(label, failure);
                         }
                     }
                     index = 0;
@@ -184,6 +178,52 @@ public final class DeviceSync {
                 } finally { finish(true); }
             }, "Acervo-sync-transfer");
             worker.start();
+        }
+
+        void copyFromPc(String id, JSONObject track, String stage) throws Exception {
+            URL target = new URL(origin + "/api/stream/" + id);
+            if (!PairingLink.isSameOrigin(target.toString(), origin)) throw new IOException("Endereco de audio invalido.");
+            HttpURLConnection current = (HttpURLConnection) target.openConnection();
+            connection = current;
+            File temp = null;
+            try {
+                current.setInstanceFollowRedirects(false);
+                current.setConnectTimeout(15000);
+                current.setReadTimeout(120000);
+                current.setRequestProperty("Accept", "audio/mpeg,audio/*");
+                current.setRequestProperty("Accept-Encoding", "identity");
+                current.setRequestProperty("Origin", origin);
+                String cookies = CookieManager.getInstance().getCookie(origin + "/");
+                if (cookies != null && !cookies.isEmpty()) current.setRequestProperty("Cookie", cookies);
+                int status = current.getResponseCode();
+                ensureRunning();
+                if (status == 401 || status == 403) throw new Unavailable("O acesso ao Acervo foi recusado. Pareie o celular novamente pelo QR code.");
+                if (status != 200) throw new IOException("O PC respondeu " + status + " ao copiar esta musica.");
+                long total = current.getContentLengthLong();
+                if (total > 250L * 1024 * 1024) throw new IOException("Esta musica ultrapassa o limite de 250 MB.");
+                temp = File.createTempFile("acervo-pc-", ".mp3", activity.getCacheDir());
+                long received = 0;
+                try (InputStream input = current.getInputStream(); FileOutputStream output = new FileOutputStream(temp)) {
+                    byte[] buffer = new byte[32 * 1024];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        ensureRunning();
+                        output.write(buffer, 0, count);
+                        received += count;
+                        long now = System.currentTimeMillis();
+                        if (now - lastProgressAt >= 300 || (total > 0 && received == total)) {
+                            lastProgressAt = now;
+                            updateProgress(stage + "\n" + size(received) + (total > 0 ? " de " + size(total) : ""));
+                        }
+                    }
+                    output.getFD().sync();
+                }
+                library.importFile(id, title(track.optString("title"), id), track.optString("artist"), track.optLong("duration"), temp);
+            } finally {
+                connection = null;
+                current.disconnect();
+                if (temp != null) temp.delete();
+            }
         }
 
         JSONObject request(String method, String endpoint, JSONObject body) throws Exception {
