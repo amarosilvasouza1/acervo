@@ -277,6 +277,12 @@
         album: track.album || 'Acervo',
         artwork: track.hasCover ? [{ src: '/api/cover/' + track.id, sizes: '512x512', type: 'image/jpeg' }] : []
       });
+      try {
+        navigator.mediaSession.setActionHandler('play', function () { if (audio.paused) AC.toggle(); });
+        navigator.mediaSession.setActionHandler('pause', function () { if (!audio.paused) AC.toggle(); });
+        navigator.mediaSession.setActionHandler('nexttrack', function () { AC.next(false); });
+        navigator.mediaSession.setActionHandler('previoustrack', function () { AC.prev(); });
+      } catch (err) {}
     }
   };
 

@@ -1,11 +1,13 @@
 package br.com.acervo.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -19,6 +21,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
@@ -44,7 +47,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** A self-contained library, search, radio and player using only this phone's internet. */
-public final class StandaloneActivity extends Activity {
+public final class StandaloneActivity extends Activity implements PlaybackService.Controls {
     private static final int BG = Color.BLACK;
     private static final int SURFACE = Color.rgb(18, 18, 18);
     private static final int CARD = Color.rgb(31, 31, 31);
@@ -76,6 +79,9 @@ public final class StandaloneActivity extends Activity {
     private List<MobileSource.Song> results = new ArrayList<>();
     private List<MobileSource.Song> searchResults = new ArrayList<>();
     private List<MobileSource.Song> radioResults = new ArrayList<>();
+    private List<MobileSource.Song> radioQueue = new ArrayList<>();
+    private int radioIndex = -1;
+    private boolean radioPlayback, radioAutoPlay;
     private String radioSeed = "";
     private String excludedId = "";
     private final BroadcastReceiver noisy = new BroadcastReceiver() {
@@ -99,6 +105,10 @@ public final class StandaloneActivity extends Activity {
         audioFocus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
                 .setAudioAttributes(audioAttributes()).setWillPauseWhenDucked(true)
                 .setOnAudioFocusChangeListener(change -> { if (change < 0) main.post(this::pause); }).build();
+        PlaybackService.attach(this);
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
+        }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
         buildScreen();
@@ -223,7 +233,7 @@ public final class StandaloneActivity extends Activity {
             LinearLayout card = songCard(track.title, track.artist, track.thumbnail, track.duration);
             LinearLayout actions = row();
             Button play = button("Ouvir", true);
-            play.setOnClickListener(v -> { playRequest++; playTrack(track); });
+            play.setOnClickListener(v -> { radioPlayback = false; radioQueue.clear(); radioIndex = -1; playRequest++; playTrack(track); });
             actions.addView(play);
             Button radio = button("Rádio", false);
             radio.setOnClickListener(v -> startRadio(track.title, track.artist, track.id));
@@ -261,14 +271,14 @@ public final class StandaloneActivity extends Activity {
             MobileLibrary.Track saved = library.get(song.id);
             if (saved != null) {
                 Button play = button("Ouvir offline", true);
-                play.setOnClickListener(v -> { playRequest++; playTrack(saved); });
+                play.setOnClickListener(v -> { if (mode == 2) playRadioSaved(song, saved); else { radioPlayback = false; playRequest++; playTrack(saved); } });
                 actions.addView(play);
             } else {
                 Button save = button("Baixar", false);
                 save.setOnClickListener(v -> download(song, false));
                 actions.addView(save);
                 Button listen = button("Baixar e ouvir", true);
-                listen.setOnClickListener(v -> download(song, true));
+                listen.setOnClickListener(v -> { if (mode == 2) listenRadio(song); else { radioPlayback = false; download(song, true); } });
                 actions.addView(listen);
             }
             Button radio = button("Rádio", false);
@@ -292,7 +302,13 @@ public final class StandaloneActivity extends Activity {
         else search(value, false);
     }
 
-    private void startRadio(String title, String artist, String id) {
+    private void startRadio(String title, String artist, String id) { startRadio(title, artist, id, false); }
+
+    private void startRadio(String title, String artist, String id, boolean autoplay) {
+        radioPlayback = false;
+        radioQueue.clear();
+        radioIndex = -1;
+        radioAutoPlay = autoplay;
         radioSeed = title + (artist == null || artist.isEmpty() ? "" : " · " + artist);
         excludedId = id;
         radioResults = new ArrayList<>();
@@ -320,8 +336,18 @@ public final class StandaloneActivity extends Activity {
                 post(() -> {
                     if (generation != searches.get() || mode != requestedMode) return;
                     results = visible;
-                    if (radio) radioResults = visible;
-                    else searchResults = visible;
+                    if (radio) {
+                        radioResults = visible;
+                        if (radioAutoPlay) {
+                            radioAutoPlay = false;
+                            if (!visible.isEmpty()) {
+                                radioPlayback = true;
+                                radioQueue = new ArrayList<>(visible);
+                                radioIndex = 0;
+                                download(visible.get(0), true);
+                            }
+                        }
+                    } else searchResults = visible;
                     searchButton.setEnabled(true);
                     render();
                     if (results.isEmpty()) status.setText("Nenhum resultado encontrado. Tente outro nome.");
@@ -347,12 +373,14 @@ public final class StandaloneActivity extends Activity {
         return filtered;
     }
 
-    private void download(MobileSource.Song song, boolean listen) {
+    private void download(MobileSource.Song song, boolean listen) { download(song, listen, false); }
+
+    private void download(MobileSource.Song song, boolean listen, boolean quiet) {
         if (listen) playAfterDownload.put(song.id, ++playRequest);
         MobileLibrary.Track saved = library.get(song.id);
         if (saved != null) { if (listen) playTrack(saved); return; }
-        if (!downloading.add(song.id)) { toast("Esta música já está sendo baixada."); return; }
-        setProgress(song.id, "Preparando download…");
+        if (!downloading.add(song.id)) { if (!quiet) toast("Esta música já está sendo baixada."); return; }
+        setProgress(song.id, quiet ? "Preparando a próxima…" : "Preparando download…");
         work.execute(() -> {
             try {
                 MobileSource.Song resolved = MobileSource.resolve(song.id);
@@ -365,14 +393,14 @@ public final class StandaloneActivity extends Activity {
                 Integer requested = playAfterDownload.remove(song.id);
                 post(() -> {
                     render();
-                    toast("Música salva neste celular.");
+                    if (!quiet) toast("Música salva neste celular.");
                     if (requested != null && requested == playRequest) playTrack(track);
                 });
             } catch (Exception failure) {
                 downloading.remove(song.id);
                 playAfterDownload.remove(song.id);
                 setProgress(song.id, "Falhou: " + message(failure));
-                post(() -> toast("Não foi possível baixar: " + message(failure)));
+                if (!quiet) post(() -> toast("Não foi possível baixar: " + message(failure)));
             }
         });
     }
@@ -495,19 +523,24 @@ public final class StandaloneActivity extends Activity {
         playerPanel.setVisibility(View.VISIBLE);
         playerTitle.setText(track.title);
         playerArtist.setText(track.artist + " · salvo neste celular");
+        PlaybackService.update(this, track.title, track.artist, false);
         playButton.setText("…");
         preparing = true;
         playRecorded = false;
         MediaPlayer candidate = new MediaPlayer();
         player = candidate;
         candidate.setAudioAttributes(audioAttributes());
+        candidate.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
         candidate.setOnPreparedListener(ready -> {
             if (ready != player) return;
             preparing = false;
-            if (foreground) startPrepared();
+            startPrepared();
             updatePlayer();
         });
-        candidate.setOnCompletionListener(ended -> { if (ended == player) skip(1); });
+        candidate.setOnCompletionListener(ended -> {
+            if (ended != player) return;
+            if (radioPlayback) nextRadio(); else skip(1);
+        });
         candidate.setOnErrorListener((failed, what, extra) -> {
             if (failed == player) { releasePlayer(); toast("Este áudio não pôde ser reproduzido. Exclua o download e baixe novamente."); }
             return true;
@@ -519,6 +552,7 @@ public final class StandaloneActivity extends Activity {
     }
 
     private void skip(int direction) {
+        if (radioPlayback) { if (direction > 0) nextRadio(); else previousRadio(); return; }
         List<MobileLibrary.Track> queue = library.all();
         if (queue.isEmpty()) return;
         int index = -1;
@@ -529,6 +563,70 @@ public final class StandaloneActivity extends Activity {
         if (target >= queue.size()) { pause(); if (player != null && !preparing) player.seekTo(0); return; }
         playRequest++;
         playTrack(queue.get(target));
+    }
+
+    private int radioIndexOf(String id) {
+        for (int i = 0; i < radioQueue.size(); i++) if (radioQueue.get(i) != null && radioQueue.get(i).id.equals(id)) return i;
+        return -1;
+    }
+
+    private void listenRadio(MobileSource.Song song) {
+        radioPlayback = true;
+        radioQueue = new ArrayList<>(radioResults);
+        radioIndex = radioIndexOf(song.id);
+        if (radioIndex < 0) { radioQueue.add(song); radioIndex = radioQueue.size() - 1; }
+        download(song, true);
+    }
+
+    private void playRadioSaved(MobileSource.Song song, MobileLibrary.Track saved) {
+        radioPlayback = true;
+        radioQueue = new ArrayList<>(radioResults);
+        radioIndex = radioIndexOf(song.id);
+        if (radioIndex < 0) { radioQueue.add(song); radioIndex = radioQueue.size() - 1; }
+        playRequest++;
+        playTrack(saved);
+    }
+
+    /** Downloads the next radio suggestion while the current song is still playing. */
+    private void prefetchNextRadio() {
+        if (!radioPlayback || radioIndex < 0) return;
+        int next = radioIndex + 1;
+        if (next >= radioQueue.size()) return;
+        MobileSource.Song song = radioQueue.get(next);
+        if (song == null || song.id == null) return;
+        if (playingTrack != null && song.id.equals(playingTrack.id)) return;
+        if (library.get(song.id) != null || downloading.contains(song.id)) return;
+        download(song, false, true);
+    }
+
+    private void nextRadio() {
+        int next = radioIndex + 1;
+        if (next >= 0 && next < radioQueue.size()) {
+            radioIndex = next;
+            MobileSource.Song song = radioQueue.get(next);
+            if (song != null) {
+                MobileLibrary.Track saved = library.get(song.id);
+                if (saved != null) { playRequest++; playTrack(saved); }
+                else download(song, true);
+                return;
+            }
+        }
+        String title = playingTrack != null ? playingTrack.title : radioSeed;
+        String artist = playingTrack != null ? playingTrack.artist : "";
+        String id = playingTrack != null ? playingTrack.id : excludedId;
+        if (title == null || title.isEmpty()) { pause(); return; }
+        startRadio(title, artist, id, true);
+    }
+
+    private void previousRadio() {
+        if (player != null && !preparing) try { if (player.getCurrentPosition() > 3000) { player.seekTo(0); return; } } catch (IllegalStateException ignored) { }
+        if (radioIndex <= 0) return;
+        radioIndex--;
+        MobileSource.Song song = radioQueue.get(radioIndex);
+        if (song == null) return;
+        MobileLibrary.Track saved = library.get(song.id);
+        if (saved != null) { playRequest++; playTrack(saved); }
+        else download(song, true);
     }
 
     private void updatePlayer() {
@@ -545,25 +643,30 @@ public final class StandaloneActivity extends Activity {
 
     private boolean requestFocus() { return audio != null && audio.requestAudioFocus(audioFocus) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED; }
     private void startPrepared() {
-        if (player == null || preparing || !foreground || !requestFocus()) return;
+        if (player == null || preparing || !requestFocus()) return;
         player.start();
         if (!playRecorded && playingTrack != null) {
             playRecorded = true;
             String id = playingTrack.id;
             work.execute(() -> { try { library.recordPlayed(id); } catch (Exception failure) { post(() -> toast(message(failure))); } });
         }
+        PlaybackService.update(this, playingTrack == null ? "Acervo" : playingTrack.title,
+                playingTrack == null ? "" : playingTrack.artist, true);
+        prefetchNextRadio();
         updatePlayer();
     }
     private static AudioAttributes audioAttributes() { return new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build(); }
     private void pause() {
         if (player != null && !preparing) try { player.pause(); updatePlayer(); } catch (IllegalStateException ignored) { }
         if (audio != null && audioFocus != null) audio.abandonAudioFocusRequest(audioFocus);
+        if (playingTrack != null && player != null) PlaybackService.update(this, playingTrack.title, playingTrack.artist, false);
     }
     private void releasePlayer() {
         if (player != null) { player.setOnCompletionListener(null); player.release(); player = null; }
         preparing = false;
         if (audio != null && audioFocus != null) audio.abandonAudioFocusRequest(audioFocus);
         if (playButton != null) playButton.setText("▶");
+        PlaybackService.hide(this);
     }
 
     private void confirmRemove(MobileLibrary.Track track) {
@@ -579,8 +682,9 @@ public final class StandaloneActivity extends Activity {
     }
 
     @Override protected void onResume() { super.onResume(); foreground = true; }
-    @Override protected void onStop() { foreground = false; pause(); super.onStop(); }
+    @Override protected void onStop() { foreground = false; super.onStop(); }
     @Override protected void onDestroy() {
+        PlaybackService.detach(this);
         destroyed = true;
         searches.incrementAndGet();
         main.removeCallbacksAndMessages(null);
@@ -589,6 +693,23 @@ public final class StandaloneActivity extends Activity {
         covers.shutdownNow();
         try { unregisterReceiver(noisy); } catch (IllegalArgumentException ignored) { }
         super.onDestroy();
+    }
+
+    @Override public void onToggle() {
+        runOnUiThread(() -> {
+            if (player == null || preparing) return;
+            try { if (player.isPlaying()) pause(); else startPrepared(); }
+            catch (IllegalStateException ignored) { }
+        });
+    }
+    @Override public void onNext() { runOnUiThread(() -> skip(1)); }
+    @Override public void onPrevious() { runOnUiThread(() -> skip(-1)); }
+    @Override public void onClose() {
+        runOnUiThread(() -> {
+            releasePlayer();
+            playingTrack = null;
+            if (playerPanel != null) playerPanel.setVisibility(View.GONE);
+        });
     }
 
     private void post(Runnable task) { main.post(() -> { if (!destroyed && !isFinishing()) task.run(); }); }

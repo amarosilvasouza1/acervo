@@ -51,15 +51,15 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.2.0.apk](releases/acervo-1.2.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo.
+Instale [releases/acervo-1.3.0.apk](releases/acervo-1.3.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
-O Android guarda M4A ou WebM de áudio, conforme a fonte. A conversão para MP3, a normalização em −14 LUFS e a análise de timbre continuam no servidor do PC. Nesta versão, o player nativo pausa ao sair do aplicativo. Desinstalar apaga a biblioteca local; atualizar com a mesma assinatura mantém os dados.
+O Android guarda M4A ou WebM de áudio, conforme a fonte. A conversão para MP3, a normalização em −14 LUFS e a análise de timbre continuam no servidor do PC. O player continua em segundo plano, com play/pause e próxima na notificação; no modo rádio, a próxima faixa é baixada enquanto a atual toca. Desinstalar apaga a biblioteca local; atualizar com a mesma assinatura mantém os dados.
 
 Para conectar as duas versões:
 
