@@ -524,7 +524,7 @@
       var conn = $('conn-text');
       if (conn) conn.textContent = health.tracks + ' faixas · local';
     } catch (e) {}
-    try { await AC.loadLibrary({ silent: true }); } catch (e) { AC.toast('Servidor indisponível. Inicie com node server.js', 'error'); }
+    try { await AC.loadLibrary({ silent: true }); } catch (e) { if (e.status !== 401) AC.toast('Servidor indisponível. Inicie com node server.js', 'error'); }
     }
     render();
 

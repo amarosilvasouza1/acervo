@@ -128,7 +128,11 @@
     var res = await fetch(path, opts);
     var data = null;
     try { data = await res.json(); } catch (e) { data = null; }
-    if (!res.ok) throw new Error((data && data.error) || ('Erro ' + res.status));
+    if (!res.ok) {
+      var error = new Error((data && data.error) || ('Erro ' + res.status));
+      error.status = res.status;
+      throw error;
+    }
     return data;
   };
 

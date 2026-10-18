@@ -41,6 +41,18 @@ Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência 
 
 O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
 
+## Acessar o PC fora de casa (Tailscale)
+
+O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, sem abrir portas no roteador, usando a tailnet privada do Tailscale.
+
+1. Mantenha o Tailscale instalado e conectado no PC e no celular, com a mesma conta.
+2. No PC, rode **iniciar-externo.cmd**. Ele publica o Acervo em HTTPS na porta 10000 da tailnet e inicia o servidor em modo nuvem.
+3. Abra o endereço mostrado (por exemplo, https://seu-pc.sua-tailnet.ts.net:10000), entre com a senha salva em **externo.env** e gere o QR em **Conectar dispositivos**.
+4. No celular, com o Tailscale ligado, abra o APK e escaneie o QR. Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
+5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
+
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.2.0 já aceita links HTTPS, então não precisa reinstalar. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. A senha em **externo.env** é local e está no .gitignore; mantenha esse arquivo privado.
+
 ## Android independente e conexão entre dispositivos
 
 Instale [releases/acervo-1.2.0.apk](releases/acervo-1.2.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo.

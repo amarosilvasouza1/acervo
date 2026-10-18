@@ -27,3 +27,6 @@ deploy/cloud-data/
 
 # pacote de fontes gerado (pertence à release, não ao histórico)
 releases/*-source.zip
+
+# senha do acesso externo via tailnet
+externo.env
