@@ -287,7 +287,7 @@ img { display: block; max-width: 100%; }
 }
 .card-artist { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
-.home-view .grid { grid-auto-flow: column; grid-template-columns: repeat(6, minmax(140px, 1fr)); overflow-x: auto; padding-bottom: 6px; }
+.home-view .grid { grid-auto-flow: row; }
 
 .cover-fallback {
   position: absolute;

@@ -126,9 +126,9 @@ button.connect-device:hover { background: #2a2a2a; }
   .quick-item { height: 56px; gap: 9px; padding-right: 8px; }
   .quick-cover { width: 56px; height: 56px; }
   .quick-title { font-size: 12px; }
-  .home-view .section .grid { display: flex; flex-wrap: nowrap; gap: 16px; margin: 0 -16px; padding: 0 16px 8px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x proximity; scrollbar-width: none; }
+  .home-view .section .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 12px; margin: 0; padding: 0; overflow: visible; }
   .home-view .section .grid::-webkit-scrollbar { display: none; }
-  .home-view .card { flex: 0 0 154px; width: 154px; scroll-snap-align: start; }
+  .home-view .card { flex: none; width: auto; scroll-snap-align: none; }
   .card { padding: 0; gap: 10px; background: transparent; border: 0; }
   .card:hover { background: transparent; }
   .card-title { font-size: 14px; line-height: 1.4; }
