@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Acervo</string>
+    <color name="acervo_background">#121212</color>
+    <color name="acervo_green">#1ED760</color>
+    <style name="AcervoTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/acervo_green</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">@color/acervo_background</item>
+        <item name="android:navigationBarColor">@color/acervo_background</item>
+        <item name="android:windowBackground">@color/acervo_background</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>
