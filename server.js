@@ -19,7 +19,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 9, versionName: '1.3.5' };
+const ANDROID_VERSION = { versionCode: 10, versionName: '1.3.6' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -617,7 +617,8 @@ const server = http.createServer(async function (req, res) {
       if (pathname === '/' && /AcervoAndroid/i.test(ua)) return serveStatic(req, res, '/index.html');
       if (pathname === '/' || pathname === '/escolher' || pathname === '/escolher/') return serveStatic(req, res, '/escolher.html');
       if (pathname === '/pc' || pathname === '/pc/') return serveStatic(req, res, '/index.html');
-      if (pathname === '/web' || pathname === '/web/') return serveStatic(req, res, '/web.html');
+      if (pathname === '/web' || pathname === '/web/') return serveStatic(req, res, '/index.html');
+      if (pathname === '/web.html') { res.writeHead(302, { Location: '/web' + url.search, 'Cache-Control': 'no-store' }); return res.end(); }
       return serveStatic(req, res, pathname);
     }
     sendJson(res, 405, { error: 'Metodo nao permitido.' });

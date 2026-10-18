@@ -6,9 +6,11 @@ Repositório: https://github.com/amarosilvasouza1/acervo
 
 ## Capturas
 
+![Acervo Web em tela inteira](docs/web-spotify.png)
+
 ![Acervo no PC](docs/desktop.jpg)
 
-![Novidades da versão 1.3.1](docs/novidades.jpg)
+![Novidades do Acervo](docs/novidades.jpg)
 
 <img src="docs/mobile.png" alt="Acervo no celular" width="320">
 
@@ -33,6 +35,8 @@ npm start
 
 Abra http://127.0.0.1:4310 — ou dê duplo clique em **iniciar.cmd**.
 
+A versão **Web** abre em `/web` e usa a largura real do navegador. No computador, oferece biblioteca lateral e player fixo; no celular, adapta os controles e a navegação. A biblioteca em lista permite filtrar por título/artista e reproduzir somente as faixas visíveis, na ordem escolhida. Início, busca, rádio, playlists e configurações compartilham a mesma interface, sem moldura de telefone ou iframe.
+
 ## Versões PC e Web
 
 Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência fica salva no navegador e pode ser trocada a qualquer momento pelo botão de telas no topo do app.
@@ -43,7 +47,7 @@ Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência 
 
 O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
 
-## Novidades 1.3.5
+## Novidades 1.3.6
 
 - **Conexão salva no celular:** o APK abre direto no último Acervo conectado; o botão **Conexão** permite trocar de servidor.
 - **Segundo plano e tela desligada:** a música continua ao minimizar ou apagar a tela, com play/pause, anterior e próxima na notificação.
@@ -72,11 +76,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.5 já aceita links HTTPS; instale esta versão para ter o segundo plano, a notificação e a conexão salva. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.3.6 já aceita links HTTPS; instale esta versão para ter o segundo plano, a notificação e a conexão salva. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.3.5.apk](releases/acervo-1.3.5.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
+Instale [releases/acervo-1.3.6.apk](releases/acervo-1.3.6.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
@@ -95,7 +99,7 @@ O celular continua independente depois da sincronização. Controlar um computad
 
 Cada QR vale cinco minutos e conecta um aparelho. O acesso pode ser removido por quem administra a biblioteca. O modo local exige novo QR após reiniciar o servidor; o modo nuvem preserva sessões em armazenamento permanente. Se houver várias placas de rede, escolha o endereço Wi‑Fi/Ethernet usado pelo celular.
 
-O botão **Atualizar aplicativo** consulta novas versões no servidor lembrado ou nas releases do repositório no GitHub. No modo independente, usa as releases do GitHub. A atualização valida o pacote e a mesma assinatura antes de abrir o instalador do Android. Versões futuras precisam ser publicadas com APK e checksum; a ausência de release é informada na tela. A primeira instalação ainda usa o APK entregue aqui. Veja [android/README.md](android/README.md) para compilação, assinatura e publicação.
+O botão **Atualizar aplicativo** consulta novas versões no servidor lembrado. O canal de atualizações pelo GitHub ainda não está configurado; o repositório será informado depois. Sem servidor lembrado, o aplicativo explica que o canal precisa ser configurado. A atualização valida o pacote e a mesma assinatura antes de abrir o instalador do Android. A primeira instalação ainda usa o APK entregue aqui. Veja [android/README.md](android/README.md) para compilação, assinatura e publicação.
 
 No modo local, o servidor aceita redes privadas e exige pareamento em outro aparelho. Se o Windows solicitar acesso de rede para o Node.js, permita a sua rede privada. O aplicativo não abre portas no roteador nem altera o firewall.
 

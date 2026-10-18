@@ -1,7 +1,8 @@
-Acervo Android 1.2.0 inclui modo independente: busca, rádio, download e biblioteca offline usando apenas a conexão do celular. O PC pode permanecer desligado.
+Acervo Android 1.3.6
 
-O modo conectado mantém QR e controles compartilhados. O botão Sincronizar compara os catálogos e adiciona músicas nos dois aparelhos sem apagá-las. O botão Atualizar aplicativo consulta novas releases e abre o instalador do Android depois de verificar a assinatura.
+- A versao Web agora abre o aplicativo responsivo real em /web; /web.html redireciona para /web. A mesma interface se adapta a PC e celular.
+- Atualizacao do aplicativo: fonte de release configuravel (servidor Acervo ou GitHub, quando o repositorio for definido), com verificacao de assinatura antes de instalar.
+- Sincronizar copia os MP3 que ja estao no PC direto para o celular, sem baixar do YouTube de novo; musicas que so existem no celular sao enviadas ao PC.
+- Notificacao de reproducao com capa e controles, configuracoes de download/offline, playlists do YouTube e biblioteca offline no celular.
 
-Android 8 ou superior. Pode instalar por cima do Acervo 1.0.0 assinado pela mesma chave. A reprodução nativa desta versão pausa ao sair do aplicativo. Downloads dependem da disponibilidade da fonte.
-
-O APK acompanha SHA256 e o pacote de fontes correspondentes. Acervo é independente, sem vínculo ou endosso do Team NewPipe.
+Android 8 ou superior. Pode instalar por cima da versao anterior: a assinatura foi mantida. Fontes completos em android/ neste repositorio. Acervo e independente, sem vinculo ou endosso do Team NewPipe.

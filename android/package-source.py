@@ -3,13 +3,15 @@ import argparse
 import hashlib
 import pathlib
 import zipfile
+import xml.etree.ElementTree as ET
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dependency-sources', required=True, type=pathlib.Path)
 args = parser.parse_args()
 android = pathlib.Path(__file__).resolve().parent
 project = android.parent
-output = project / 'releases' / 'acervo-1.2.0-source.zip'
+version = ET.parse(android / 'app/src/main/AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName')
+output = project / 'releases' / ('acervo-' + version + '-source.zip')
 sources = []
 for name in ['app/src', 'tests']:
     for file in (android / name).rglob('*'):
@@ -30,7 +32,7 @@ with zipfile.ZipFile(output, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as arch
         if any(part.lower() in {'signing', 'data', 'node_modules', '.git', '.gradle'} for part in pathlib.PurePosixPath(name).parts):
             raise SystemExit('Private path refused: ' + name)
         archive.write(file, name)
-    archive.writestr('README.txt', 'Acervo Android 1.2.0 corresponding source\n\n'
+    archive.writestr('README.txt', 'Acervo Android ' + version + ' corresponding source\n\n'
         'See android/README.md for JDK21, Gradle8.9 and SDK35 build instructions.\n'
         'Source archives for every runtime dependency are in third-party-sources/.\n'
         'No signing key, account credential or personal music is included.\n'

@@ -35,8 +35,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /** Explicit, user-initiated updates. Android always handles the final installation. */
 public final class AppUpdater {
     private static final String PACKAGE = "br.com.acervo.app";
-    private static final String REPOSITORY = "amarosilvasouza1/acervo";
-    private static final String RELEASE_API = "https://api.github.com/repos/" + REPOSITORY + "/releases/latest";
     private static final long MAX_APK_BYTES = 100L * 1024L * 1024L;
     private static final AtomicBoolean BUSY = new AtomicBoolean(false);
     private static volatile File pendingApk;
@@ -72,7 +70,11 @@ public final class AppUpdater {
                     JSONObject metadata = new JSONObject(readText(new URL(origin + "/api/app/version"), origin, false, 2 * 1024 * 1024, cancelled));
                     update = serverUpdate(metadata, origin);
                 } else {
-                    JSONObject metadata = new JSONObject(readText(new URL(RELEASE_API), null, true, 2 * 1024 * 1024, cancelled));
+                    if (!UpdateSource.configured()) {
+                        message(activity, "Atualizacao", "Atualizações pelo GitHub serão ativadas quando o repositório for configurado. Você também pode atualizar pelo servidor Acervo conectado.");
+                        return;
+                    }
+                    JSONObject metadata = new JSONObject(readText(new URL(UpdateSource.latestReleaseApi(UpdateSource.GITHUB_REPOSITORY)), null, true, 2 * 1024 * 1024, cancelled));
                     update = githubUpdate(metadata);
                 }
                 if (update.versionCode > 0 && update.versionCode <= versionCode(installed)) {
@@ -320,19 +322,17 @@ public final class AppUpdater {
     }
 
     static boolean allowedUrl(URI uri, String origin, boolean github) {
+        return allowedUrl(uri, origin, github, UpdateSource.GITHUB_REPOSITORY);
+    }
+
+    static boolean allowedUrl(URI uri, String origin, boolean github, String repository) {
         if (uri == null || uri.getHost() == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null) return false;
         if (!github) return origin != null && PairingLink.isSameOrigin(uri.toString(), origin);
-        if (!"https".equalsIgnoreCase(uri.getScheme()) || (uri.getPort() != -1 && uri.getPort() != 443)) return false;
-        String host = uri.getHost().toLowerCase(Locale.US);
-        if ("api.github.com".equals(host)) return ("/repos/" + REPOSITORY + "/releases/latest").equals(uri.getRawPath()) && uri.getRawQuery() == null;
-        if ("github.com".equals(host)) return releaseAssetUrl(uri);
-        return "objects.githubusercontent.com".equals(host) || "release-assets.githubusercontent.com".equals(host);
+        return UpdateSource.allowedGitHubUri(uri, repository);
     }
 
     private static boolean releaseAssetUrl(URI uri) {
-        return "https".equalsIgnoreCase(uri.getScheme()) && "github.com".equalsIgnoreCase(uri.getHost())
-                && (uri.getPort() == -1 || uri.getPort() == 443) && uri.getRawUserInfo() == null && uri.getRawFragment() == null
-                && uri.getRawPath() != null && uri.getRawPath().startsWith("/" + REPOSITORY + "/releases/download/");
+        return UpdateSource.releaseAssetUrl(uri, UpdateSource.GITHUB_REPOSITORY);
     }
 
     static boolean validHash(String hash) { return hash != null && hash.matches("[a-f0-9]{64}"); }

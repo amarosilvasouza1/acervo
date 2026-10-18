@@ -13,6 +13,7 @@ $updaterJavaRoot = Join-Path $updaterRoot 'android/app/src/main/java/br/com/acer
 & (Join-Path $JavaHome 'bin/javac.exe') --release 8 -encoding UTF-8 -classpath $updaterAndroidJar -d $updaterOutput `
     (Join-Path $updaterJavaRoot 'PairingLink.java') `
     (Join-Path $updaterJavaRoot 'ApkProvider.java') `
+    (Join-Path $updaterJavaRoot 'UpdateSource.java') `
     (Join-Path $updaterJavaRoot 'AppUpdater.java') `
     (Join-Path $PSScriptRoot 'AppUpdaterPolicyTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar testes do atualizador.' }

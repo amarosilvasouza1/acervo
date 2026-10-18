@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=7">
-<link rel="stylesheet" href="/mobile.css?v=7">
+<link rel="stylesheet" href="/styles.css?v=8">
+<link rel="stylesheet" href="/mobile.css?v=8">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231ed760'/%3E%3Cpath d='M8 13v6M12 9v14M16 11v10M20 7v18M24 13v6' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -41,16 +41,13 @@
     <div class="topbar-actions">
       <span class="conn" id="conn"><span class="conn-dot"></span><span id="conn-text">acervo local</span></span>
       <span class="device-banner" id="device-status" hidden aria-live="polite"></span>
-      <button class="icon-btn" data-action="switch-version" aria-label="Trocar versão (PC ou Web)" title="Trocar versão">
-        <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="13" height="9.5" rx="1.4"/><path d="M6.5 20h5M9 13.5V20"/><rect x="17" y="9" width="4.5" height="10" rx="1.2"/></svg>
-      </button>
       <button class="icon-btn connect-trigger" data-action="connect-devices" aria-label="Conectar dispositivos" title="Conectar dispositivos">
         <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="13" height="11" rx="1.5"/><path d="M6 20h7M9.5 15v5"/><rect x="16" y="10" width="5" height="10" rx="1.2"/></svg>
       </button>
       <button class="btn btn-light topbar-add" data-action="open-download" aria-label="Adicionar música">
         <span data-ico="download"></span><span class="button-label">Adicionar música</span>
       </button>
-      <span class="profile-avatar" title="Seu acervo" aria-label="Seu acervo">A</span>
+      <button class="icon-btn settings-trigger" data-action="nav" data-view="settings" title="Configurações" aria-label="Configurações" data-ico="settings"></button>
     </div>
   </header>
 
@@ -60,11 +57,9 @@
       <button class="icon-btn library-add" data-action="open-download" aria-label="Adicionar música à biblioteca" title="Adicionar música"><span aria-hidden="true">+</span></button>
     </div>
     <nav class="nav" aria-label="Navegação">
-      <span class="nav-label">Explorar</span>
       <button class="nav-item is-active" data-action="nav" data-view="home"><span class="nav-ico" data-ico="home"></span><span>Início</span></button>
       <button class="nav-item" data-action="nav" data-view="search"><span class="nav-ico" data-ico="search"></span><span>Buscar</span></button>
       <button class="nav-item" data-action="nav" data-view="radio" title="Sua rádio"><span class="nav-ico" data-ico="radio"></span><span>Rádio</span></button>
-      <span class="nav-label">Coleções</span>
       <button class="nav-item" data-action="nav" data-view="library"><span class="nav-ico" data-ico="library"></span><span>Músicas</span></button>
       <button class="nav-item" data-action="nav" data-view="playlists"><span class="nav-ico" data-ico="queue"></span><span>Playlists</span></button>
     </nav>
@@ -73,9 +68,7 @@
     <div class="sidebar-foot">
       <div class="library-summary"><span><strong id="stat-tracks">0</strong> músicas</span><span aria-hidden="true">·</span><span id="stat-hours">0h</span></div>
       <span class="hide" aria-hidden="true"><span id="stat-artists">0</span><span id="stat-lufs">—</span></span>
-      <button class="side-link" data-action="open-download"><span data-ico="download"></span>Adicionar ao acervo</button>
-      <button class="side-link" data-action="whats-new"><span data-ico="sparkles"></span>Novidades</button>
-      <button class="side-link" data-action="nav" data-view="settings"><span data-ico="settings"></span>Configurações</button>
+      <button class="side-link" data-action="switch-version"><span data-ico="device"></span>Trocar versão</button>
       <button class="side-link" data-action="save-all-offline" id="save-all-link" hidden><span data-ico="download"></span>Salvar biblioteca no celular</button>
       <button class="side-link" data-action="open-offline" id="offline-link" hidden><span data-ico="phone"></span>Ouvir offline</button>
     </div>
@@ -120,7 +113,9 @@
 
   <div class="player-extra">
     <span class="player-eq" id="player-eq" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+    <button class="icon-btn player-timer" data-action="sleep" aria-label="Timer de sono" title="Timer de sono" data-ico="moon"></button>
     <button class="icon-btn" data-action="queue" aria-label="Fila" title="Fila" data-ico="queue"></button>
+    <button class="icon-btn connect-trigger" data-action="connect-devices" aria-label="Dispositivos disponíveis" title="Dispositivos disponíveis" data-ico="device"></button>
     <button class="icon-btn" data-action="mute" id="btn-mute" aria-label="Silenciar" data-ico="volume"></button>
     <input class="volume" id="volume" type="range" min="0" max="1" step="0.01" value="0.85" aria-label="Volume">
   </div>
@@ -139,9 +134,9 @@
 <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
 <audio id="audio" preload="metadata"></audio>
-<script src="/app.js?v=6" defer></script>
-<script src="/radio.js?v=6" defer></script>
-<script src="/connect.js?v=6" defer></script>
-<script src="/views.js?v=6" defer></script>
+<script src="/app.js?v=8" defer></script>
+<script src="/radio.js?v=8" defer></script>
+<script src="/connect.js?v=8" defer></script>
+<script src="/views.js?v=8" defer></script>
 </body>
 </html>

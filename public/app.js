@@ -712,7 +712,7 @@
       await AC.loadPlaylists();
       state.view = 'playlist';
       state.playlistId = result.playlist.id;
-      render();
+      if (typeof AC.render === 'function') AC.render();
       AC.toast(result.total + ' músicas na fila. O download continua no computador.');
       return result;
     } catch (error) {
@@ -890,6 +890,7 @@
 
   document.addEventListener('keydown', function (e) {
     var focusedAction = document.activeElement;
+    if (e.defaultPrevented) return;
     if ((e.key === 'Enter' || e.code === 'Space') && focusedAction && focusedAction.getAttribute('role') === 'button' && focusedAction.hasAttribute('data-action') && focusedAction.tagName !== 'BUTTON') {
       e.preventDefault();
       focusedAction.click();
@@ -901,7 +902,8 @@
       document.body.classList.remove('nav-open');
     }
     var hasModal = document.getElementById('modal-root') && document.getElementById('modal-root').children.length > 0;
-    if (e.code === 'Space' && !hasModal && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) {
+    var interactive = focusedAction && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(focusedAction.tagName) || focusedAction.isContentEditable || focusedAction.getAttribute('role') === 'slider' || focusedAction.getAttribute('role') === 'checkbox');
+    if (e.code === 'Space' && !hasModal && !interactive) {
       e.preventDefault();
       AC.toggle();
     }

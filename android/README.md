@@ -10,7 +10,7 @@ A sincronizacao de bibliotecas e manual: depois de parear e conectar ao outro Ac
 
 ## Instalar
 
-1. Copie `releases/acervo-1.3.5.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
+1. Copie `releases/acervo-1.3.6.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
 2. Abra o aplicativo e toque em **Usar neste celular**.
 3. Em **Buscar**, procure uma musica e toque em **Baixar** ou **Baixar e ouvir**. Ela fica salva na biblioteca do celular.
 4. Para controlar outro Acervo, volte a **Conexoes** e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor.
@@ -52,18 +52,18 @@ O script usa a chave original em `android/signing/acervo-release.jks` e sua senh
 
 Guarde um backup privado dos dois arquivos juntos. Eles permitem assinar futuras atualizacoes compativeis com a instalacao existente. A pasta `signing/` esta excluida pelo `.gitignore`: nao envie a chave ou a senha junto com o APK. Se a chave existir e a senha estiver ausente, a compilacao para em vez de substituir a assinatura.
 
-Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.3.5.apk` com o Android Build Tools no PATH.
+Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.3.6.apk` com o Android Build Tools no PATH.
 
 ## Atualizar pelo aplicativo
 
-O botão **Atualizar aplicativo** consulta `/api/app/version` no servidor lembrado, ou as releases estáveis de `amarosilvasouza1/acervo` no GitHub quando usado sem servidor. A verificação de ausência de release não é tratada como confirmação de versão atualizada. O Android confirma a instalação e, se necessário, solicita permitir instalação por este aplicativo.
+O botão **Atualizar aplicativo** consulta `/api/app/version` no servidor lembrado. Ainda não há repositório GitHub configurado para atualizações; ele será informado depois. Sem servidor lembrado, o aplicativo explica que o canal precisa ser configurado. A ausência de um canal ou de uma versão disponível não é tratada como confirmação de versão atualizada. O Android confirma a instalação e, se necessário, solicita permitir instalação por este aplicativo.
 
 A atualização aceita apenas pacote `br.com.acervo.app`, código de versão maior e o mesmo certificado da instalação existente. Quando um checksum é publicado, ele também precisa conferir. Os arquivos temporários ficam no cache privado; o compartilhamento com o instalador é somente de leitura e limitado ao APK verificado.
 
-Para disponibilizar uma versão nova a aparelhos fora da rede local, publique os artefatos em uma release estável do repositório. **Nenhuma release foi publicada por esta alteração.** O script `android/publish-release.ps1` faz essa publicação apenas quando o proprietário o executa, após revisar os arquivos e autenticar o GitHub CLI. Antes de versões futuras, atualize os números no manifesto, Gradle, servidor e scripts/notas de release, compile, verifique e preserve a chave original.
+Depois de informar e configurar o repositório de atualizações, será possível disponibilizar versões novas em releases estáveis com APK e checksum. **Nenhuma release foi publicada por esta alteração.** O script `android/publish-release.ps1` só deve ser usado após revisar o destino e os arquivos e autenticar o GitHub CLI. Antes de versões futuras, atualize os números no manifesto, Gradle, servidor e scripts/notas de release, compile, verifique e preserve a chave original.
 
 ## Licenças e fontes
 
-O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório; o pacote `releases/acervo-1.2.0-source.zip` continua disponível com as dependências abertas da versão anterior. Nenhum pacote inclui assinatura privada, senhas ou músicas.
+O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.3.6-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
 
 É possível compilar um APK próprio com Gradle e assiná-lo com uma chave própria sem ter acesso à chave original. Essa chave própria não permite atualizar por cima de uma instalação assinada pela chave original. Para empacotar os fontes da distribuição, use `python android/package-source.py --dependency-sources CAMINHO_DOS_FONTES_DAS_DEPENDENCIAS`.

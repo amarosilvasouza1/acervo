@@ -10,7 +10,7 @@ public final class AppUpdaterPolicyTest {
         if (actual != expected) throw new AssertionError(label);
     }
     private static void url(String candidate, String origin, boolean github, boolean expected) throws Exception {
-        check(AppUpdater.allowedUrl(new URI(candidate), origin, github), expected, candidate);
+        check(AppUpdater.allowedUrl(new URI(candidate), origin, github, "fixture-owner/acervo"), expected, candidate);
     }
     public static void main(String[] args) throws Exception {
         url("https://music.example/downloads/acervo.apk", "https://music.example", false, true);
@@ -22,18 +22,29 @@ public final class AppUpdaterPolicyTest {
         url("http://8.8.8.8/acervo.apk", "http://8.8.8.8", false, false);
         url("https://person:secret@music.example/acervo.apk", "https://music.example", false, false);
         url("https://music.example/acervo.apk#fragment", "https://music.example", false, false);
-        url("https://api.github.com/repos/amarosilvasouza1/acervo/releases/latest", null, true, true);
+        url("https://api.github.com/repos/fixture-owner/acervo/releases/latest", null, true, true);
         url("https://api.github.com/repos/other/acervo/releases/latest", null, true, false);
-        url("https://api.github.com/repos/amarosilvasouza1/acervo/releases/latest?other=1", null, true, false);
-        url("https://github.com/amarosilvasouza1/acervo/releases/download/v1.2.0/acervo-1.2.0.apk", null, true, true);
+        url("https://api.github.com/repos/fixture-owner/acervo/releases/latest?other=1", null, true, false);
+        url("https://github.com/fixture-owner/acervo/releases/download/v1.2.0/acervo-1.2.0.apk", null, true, true);
         url("https://github.com/other/acervo/releases/download/v1.2.0/acervo.apk", null, true, false);
-        url("https://github.com/amarosilvasouza1/acervo/issues/1", null, true, false);
+        url("https://github.com/fixture-owner/acervo/issues/1", null, true, false);
+        url("https://github.com/fixture-owner/acervo/releases/download/v1/../../other.apk", null, true, false);
         url("https://release-assets.githubusercontent.com/signed-asset?token=fixture", null, true, true);
         url("https://objects.githubusercontent.com/github-production-release-asset/fixture", null, true, true);
         url("https://release-assets.githubusercontent.com.evil.example/fixture", null, true, false);
         url("http://release-assets.githubusercontent.com/fixture", null, true, false);
         url("https://release-assets.githubusercontent.com:8443/fixture", null, true, false);
         url("file:///tmp/acervo.apk", null, true, false);
+        check(UpdateSource.configured(), false, "GitHub disabled until configured");
+        check(UpdateSource.validRepository("fixture-owner/acervo"), true, "valid repository");
+        check(UpdateSource.validRepository(""), false, "empty repository");
+        check(UpdateSource.validRepository("https://github.com/fixture-owner/acervo"), false, "repository URL rejected");
+        check(UpdateSource.validRepository("owner/repo/extra"), false, "repository extra path");
+        check(UpdateSource.validRepository("owner/.."), false, "repository traversal");
+        check(UpdateSource.validRepository("owner/repo.git"), false, "repository clone suffix");
+        check(UpdateSource.validRepository("owner/repo?token=fixture"), false, "repository query");
+        check(UpdateSource.allowedGitHubUri(new URI("https://release-assets.githubusercontent.com/asset"), ""), false, "CDN disabled without repository");
+        check(AppUpdater.allowedUrl(new URI("https://api.github.com/repos/fixture-owner/acervo/releases/latest"), null, true), false, "default source disabled");
         check(AppUpdater.validHash("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), true, "SHA256");
         check(AppUpdater.validHash("abc"), false, "short hash");
         check(AppUpdater.validHash(null), false, "missing hash");

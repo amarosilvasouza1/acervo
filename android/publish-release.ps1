@@ -1,8 +1,10 @@
 [CmdletBinding()]
-param([string]$Repository = 'amarosilvasouza1/acervo')
+param([Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$')][string]$Repository)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
-$version = '1.2.0'
+[xml]$manifest = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'app/src/main/AndroidManifest.xml') -Raw
+$version = $manifest.manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')
+if (-not $version -or $version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Versao Android invalida no manifesto.' }
 $apk = Join-Path $root ('releases/acervo-' + $version + '.apk')
 $source = Join-Path $root ('releases/acervo-' + $version + '-source.zip')
 foreach ($file in @($apk, ($apk + '.sha256'), $source, ($source + '.sha256'))) {

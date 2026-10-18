@@ -30,3 +30,4 @@ releases/*-source.zip
 
 # senha do acesso externo via tailnet
 externo.env
+releases/*-source.zip.sha256

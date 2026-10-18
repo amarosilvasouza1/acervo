@@ -1,12 +1,12 @@
 {
   "name": "acervo",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "private": true,
   "type": "module",
   "description": "Acervo - biblioteca musical com download do YouTube, normalizacao de loudness e recomendacoes por similaridade",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test tests/radio-tests.mjs tests/test-radio-client.mjs tests/connect-backend-tests.mjs tests/connect-client-tests.mjs tests/cloud-connect-tests.mjs",
+    "test": "node --test tests/radio-tests.mjs tests/test-radio-client.mjs tests/connect-backend-tests.mjs tests/connect-client-tests.mjs tests/cloud-connect-tests.mjs tests/web-navigation-tests.mjs",
     "test:connect": "node tests/connect-http.mjs",
     "test:cloud": "node tests/cloud-http.mjs"
   },
