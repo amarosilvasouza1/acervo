@@ -1,0 +1,5 @@
+cloud.env
+*.env
+backups/
+*.tar.gz
+*.tgz

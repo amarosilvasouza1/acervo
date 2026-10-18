@@ -662,6 +662,13 @@
     mute: function () { AC.toggleMute(); },
     queue: function () { AC.toggleQueue(); },
     menu: function () { document.body.classList.toggle('nav-open'); },
+    'switch-version': function () {
+      var target = '/escolher?choose=1';
+      if (window.top !== window.self) {
+        try { window.top.location.href = target; return; } catch (e) {}
+      }
+      window.location.href = target;
+    },
     'close-modal': function () { AC.closeModals(); }
   };
 

@@ -127,6 +127,7 @@ function sharedBackend(initial = {}) {
       calls.push(call);
       if (calls.length > 200) throw new Error('Possible Connect echo loop');
       const { url, body, deviceId } = call;
+      if (url === '/api/connect/config') return response({ cloud: false });
       if (url === '/api/connect/info') return response(deviceId === 'pc' || paired.has(deviceId) ? snap(deviceId) : { error: 'Leia o QR Code para conectar.' }, deviceId === 'pc' || paired.has(deviceId) ? 200 : 401);
       if (url === '/api/connect/register') return response(snap(deviceId));
       if (url === '/api/connect/claim') { paired.add(deviceId); return response(snap(deviceId)); }
@@ -277,6 +278,7 @@ test('remote boot claims the QR before loading the library, strips the fragment,
   const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=private-code', backend, boot: true });
   h.boot(); await flush();
   const urls = h.calls.map(call => call.url);
+  assert.ok(urls.indexOf('/api/connect/config') < urls.indexOf('/api/connect/claim'));
   assert.ok(urls.indexOf('/api/connect/claim') >= 0);
   assert.ok(urls.indexOf('/api/library') > urls.indexOf('/api/connect/claim'));
   assert.equal(h.location.hash, ''); assert.equal(h.historyCalls.length, 1);
@@ -351,4 +353,122 @@ test('a library response already in flight cannot repopulate a revoked remote se
   pending.resolve(response({ tracks, stats: { tracks: tracks.length } })); await flush();
   assert.equal(phone.AC.state.tracks.length, 0); assert.equal(phone.AC.state.current, null);
   assert.equal(phone.AC.connect.dialog, 'pair');
+});
+
+function cloudBackend({ authenticated = false, admin = true } = {}) {
+  const base = sharedBackend({ activeDeviceId: 'phone' });
+  let signedIn = authenticated;
+  const cloudSnapshot = () => ({ ...base.snapshot('phone'), local: false, admin, cloud: true });
+  const fetch = base.fetch;
+  base.fetch = async call => {
+    if (call.url === '/api/connect/config') return response({ cloud: true });
+    if (call.url === '/api/connect/info') return response(signedIn ? cloudSnapshot() : { error: 'Entre no seu Acervo.' }, signedIn ? 200 : 401);
+    if (call.url === '/api/connect/login') {
+      if (call.body.password !== ' cloud owner password ') return response({ error: 'Senha incorreta.' }, 401);
+      signedIn = true; return response(cloudSnapshot());
+    }
+    if (call.url === '/api/connect/claim') { signedIn = true; return response({ ...cloudSnapshot(), admin: false }); }
+    if (call.url === '/api/connect/logout') { signedIn = false; return response({ ok: true }); }
+    if (call.url === '/api/connect/pairing') return response({ code: 'cloud-single-use-code', expiresAt: Date.parse('2026-10-18T18:05:00Z'), url: 'https://music.example.com/#pair=cloud-single-use-code', qrDataUrl: 'data:image/png;base64,aGVsbG8=', candidates: [] });
+    return fetch(call);
+  };
+  return base;
+}
+
+test('cloud login sends the password only in its POST and creates a cookie-based output without local registration', async () => {
+  const h = browser({ deviceId: 'phone', mobile: true, backend: cloudBackend() });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.deepEqual(h.calls.map(call => call.url), ['/api/connect/config', '/api/connect/info']);
+  const html = h.getNode('modal-root').innerHTML;
+  assert.match(html, /type="password"[^>]*id="connect-password"[^>]*autocomplete="current-password"/);
+  assert.match(html, /connect-claim-form/);
+  assert.doesNotMatch(html, /computador|mesmo Wi/);
+  h.getNode('connect-password').value = ' cloud owner password ';
+  h.getNode('connect-login-form').emit('submit', { preventDefault() {} });
+  assert.equal(h.getNode('connect-password').value, '');
+  await flush();
+  assert.equal(h.AC.connect.ready, true); assert.equal(h.AC.connect.admin, true); assert.equal(h.AC.connect.local, false);
+  const login = h.calls.find(call => call.url === '/api/connect/login');
+  assert.equal(login.options.method, 'POST'); assert.equal(login.body.password, ' cloud owner password ');
+  assert.equal(login.body.kind, 'mobile'); assert.equal(login.options.credentials, 'same-origin');
+  assert.equal(h.calls.some(call => call.url === '/api/connect/register'), false);
+  assert.equal(h.calls.some(call => 'X-Acervo-Device' in call.options.headers), false);
+  assert.equal(h.streams.at(-1).url, '/api/connect/events');
+  assert.equal(h.storageWrites.length, 0);
+  assert.ok(h.calls.some(call => call.url === '/api/library'));
+  assert.equal(h.getNode('modal-root').innerHTML, '');
+});
+
+test('a rejected cloud password keeps the login dialog and never loads protected library data', async () => {
+  const h = browser({ deviceId: 'phone', mobile: true, backend: cloudBackend() });
+  await h.AC.initConnect();
+  h.getNode('connect-password').value = 'wrong';
+  h.getNode('connect-login-form').emit('submit', { preventDefault() {} });
+  await flush();
+  assert.equal(h.AC.connect.ready, false); assert.equal(h.AC.connect.admin, false);
+  assert.equal(h.getNode('connect-error').textContent, 'Senha incorreta.');
+  assert.equal(h.getNode('connect-password').value, ''); assert.equal(h.streams.length, 0);
+  assert.equal(h.calls.some(call => call.url === '/api/library'), false);
+  assert.equal(h.storageWrites.length, 0);
+});
+
+test('cloud owners can pair and revoke devices while keeping remote-only identity handling', async () => {
+  const h = await connectBrowser(browser({ deviceId: 'phone', mobile: true, backend: cloudBackend({ authenticated: true }) }));
+  h.AC.openDevices(); await flush();
+  assert.match(h.getNode('modal-root').innerHTML, /connect-pairing/);
+  assert.match(h.getNode('modal-root').innerHTML, /connect-logout/);
+  assert.match(h.getNode('connect-device-list').innerHTML, /connect-revoke/);
+  assert.match(h.getNode('connect-pairing').innerHTML, /https:\/\/music.example.com\/#pair=cloud-single-use-code/);
+  assert.doesNotMatch(h.getNode('connect-pairing').innerHTML, /computador|mesma rede/);
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 1);
+  h.AC.playerActions['connect-revoke']({ getAttribute: () => 'pc' }); await flush();
+  assert.equal(h.calls.find(call => call.url === '/api/connect/devices/pc').options.method, 'DELETE');
+  assert.equal(h.calls.some(call => 'X-Acervo-Device' in call.options.headers), false);
+  assert.equal(h.storageWrites.length, 0);
+});
+
+test('cloud QR claims work before library boot and paired devices do not receive owner controls', async () => {
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=cloud-qr-code', backend: cloudBackend(), boot: true });
+  h.boot(); await flush();
+  const urls = h.calls.map(call => call.url);
+  assert.ok(urls.indexOf('/api/connect/config') < urls.indexOf('/api/connect/claim'));
+  assert.ok(urls.indexOf('/api/connect/claim') < urls.indexOf('/api/library'));
+  assert.equal(h.location.hash, ''); assert.equal(h.storageWrites.length, 0);
+  assert.equal(h.AC.connect.cloud, true); assert.equal(h.AC.connect.local, false); assert.equal(h.AC.connect.admin, false);
+  h.AC.openDevices(); await flush();
+  assert.doesNotMatch(h.getNode('modal-root').innerHTML, /id="connect-pairing"/);
+  assert.doesNotMatch(h.getNode('connect-device-list').innerHTML, /connect-revoke/);
+  assert.equal(h.calls.some(call => call.url === '/api/connect/pairing'), false);
+  assert.equal(h.streams[0].url, '/api/connect/events');
+});
+
+test('cloud logout stops playback, clears protected state and permits a fresh login', async () => {
+  const h = await connectBrowser(browser({ deviceId: 'phone', mobile: true, backend: cloudBackend({ authenticated: true }) }));
+  h.AC.play('one'); await flush(); assert.equal(h.audio.paused, false);
+  const previousStream = h.streams.at(-1);
+  await h.AC.playerActions['connect-logout'](); await flush();
+  assert.equal(h.calls.find(call => call.url === '/api/connect/logout').options.method, 'POST');
+  assert.equal(previousStream.closed, true); assert.equal(h.audio.paused, true);
+  assert.equal(h.AC.connect.ready, false); assert.equal(h.AC.connect.admin, false); assert.equal(h.AC.connect.deviceId, null);
+  assert.equal(h.AC.state.tracks.length, 0); assert.equal(h.AC.state.current, null); assert.equal(h.AC.state.queue.length, 0);
+  assert.match(h.getNode('modal-root').innerHTML, /Você saiu deste dispositivo/);
+  assert.doesNotMatch(h.getNode('modal-root').innerHTML, /computador|mesmo Wi/);
+  h.getNode('connect-password').value = ' cloud owner password ';
+  h.getNode('connect-login-form').emit('submit', { preventDefault() {} }); await flush();
+  assert.equal(h.AC.connect.ready, true); assert.equal(h.AC.connect.admin, true);
+  assert.notEqual(h.streams.at(-1), previousStream); assert.equal(h.streams.at(-1).closed, false);
+});
+
+test('unavailable public connection config fails closed and can be retried before protected requests', async () => {
+  let unavailable = true;
+  const backend = cloudBackend({ authenticated: true }); const fetch = backend.fetch;
+  backend.fetch = call => call.url === '/api/connect/config' && unavailable ? response({ error: 'Unavailable' }, 503) : fetch(call);
+  const h = browser({ deviceId: 'phone', mobile: true, backend });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.deepEqual(h.calls.map(call => call.url), ['/api/connect/config']);
+  assert.match(h.getNode('modal-root').innerHTML, /connect-retry/);
+  assert.doesNotMatch(h.getNode('modal-root').innerHTML, /connect-login-form|connect-claim-form/);
+  unavailable = false; await h.AC.playerActions['connect-retry'](); await flush();
+  assert.equal(h.AC.connect.ready, true); assert.equal(h.AC.connect.cloud, true);
+  assert.ok(h.calls.some(call => call.url === '/api/library'));
 });

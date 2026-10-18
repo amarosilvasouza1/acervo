@@ -1,0 +1,12 @@
+pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        if (System.getenv('ACERVO_MAVEN_CACHE')) maven { url = uri(System.getenv('ACERVO_MAVEN_CACHE')) }
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io'; content { includeGroupByRegex 'com\\.github\\.TeamNewPipe.*'; includeGroupByRegex 'com\\.github\\.teamnewpipe.*' } }
+    }
+}
+rootProject.name = 'Acervo'
+include ':app'

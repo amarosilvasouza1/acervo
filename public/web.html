@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Acervo — versão Web</title>
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Acervo na versão Web, com interface de celular e a mesma biblioteca.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231ed760'/%3E%3Cpath d='M8 13v6M12 9v14M16 11v10M20 7v18M24 13v6' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #050505;
+  --line: #232323;
+  --ink: #fff;
+  --muted: #a7a7a7;
+  --muted-2: #717171;
+  --accent: #1ed760;
+  --on-accent: #111;
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(700px 320px at 50% -10%, rgba(30, 215, 96, 0.1), transparent 70%),
+    var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 8px; }
+
+.shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 26px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(5, 5, 5, 0.75);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.brand { display: inline-flex; align-items: center; gap: 9px; font-weight: 800; font-size: 18px; letter-spacing: -0.04em; }
+.brand svg { color: var(--accent); }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(30, 215, 96, 0.12);
+  border: 1px solid rgba(30, 215, 96, 0.26);
+  color: #6ef2a0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.hint { color: var(--muted-2); font-size: 12px; }
+.bar-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border: 1px solid #333;
+  color: var(--ink);
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.btn:hover { border-color: #5a5a5a; background: rgba(255, 255, 255, 0.04); }
+.btn-accent { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn-accent:hover { background: #2bf07a; border-color: #2bf07a; }
+
+.stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+}
+.phone {
+  position: relative;
+  width: min(430px, 100%);
+  height: min(880px, 100%);
+  border-radius: 30px;
+  padding: 6px;
+  background: linear-gradient(160deg, #232323, #101010);
+  box-shadow:
+    0 0 0 1px #2a2a2a,
+    0 30px 80px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+}
+.phone::before {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 86px;
+  height: 5px;
+  border-radius: 6px;
+  background: #2c2c2c;
+  pointer-events: none;
+  opacity: 0.7;
+}
+.phone iframe {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+  border-radius: 25px;
+  background: #000;
+}
+
+@media (max-width: 760px) {
+  .bar { display: none; }
+  .stage { padding: 0; }
+  .phone { width: 100%; height: 100dvh; border-radius: 0; padding: 0; background: #000; box-shadow: none; }
+  .phone::before { display: none; }
+  .phone iframe { border-radius: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.001ms !important; }
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="bar">
+    <a class="brand" href="/escolher?choose=1" aria-label="Acervo">
+      <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="currentColor"/><path d="M8 14v4M12 10v12M16 12v8M20 8v16M24 14v4" fill="none" stroke="#000" stroke-width="2.2" stroke-linecap="round"/></svg>
+      <span>acervo</span>
+    </a>
+    <span class="pill">Versão Web</span>
+    <span class="hint">Interface de celular · mesma biblioteca</span>
+    <div class="bar-actions">
+      <a class="btn" href="/escolher?choose=1">Trocar versão</a>
+      <a class="btn btn-accent" href="/pc" data-to-pc>Abrir versão PC</a>
+    </div>
+  </header>
+  <main class="stage">
+    <div class="phone">
+      <iframe src="/pc?embed=web" title="Acervo na versão Web" allow="clipboard-write; fullscreen; autoplay"></iframe>
+    </div>
+  </main>
+</div>
+<script>
+(function () {
+  try { localStorage.setItem('acervo:version', 'web'); } catch (e) {}
+  var link = document.querySelector('[data-to-pc]');
+  if (link) link.addEventListener('click', function () {
+    try { localStorage.setItem('acervo:version', 'pc'); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

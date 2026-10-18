@@ -1,0 +1,3 @@
+# Stable release checked against the official yt-dlp project on 2026-10-18.
+# The default extra includes the JavaScript challenge solver (yt-dlp-ejs).
+yt-dlp[default]==2026.8.19

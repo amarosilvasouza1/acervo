@@ -93,7 +93,7 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
         title.setTypeface(null, android.graphics.Typeface.BOLD);
         top.addView(title);
         TextView hint = new TextView(this);
-        hint.setText("No computador, abra Acervo → Conectar dispositivos → Gerar QR code.");
+        hint.setText("No seu Acervo, abra Conectar dispositivos → Gerar QR code.");
         hint.setTextColor(Color.rgb(200, 200, 200));
         hint.setTextSize(14);
         hint.setPadding(0, dp(10), 0, 0);
@@ -167,7 +167,7 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
         try {
             int cameraId = backCamera();
             if (cameraId == -1) {
-                status.setText("Este aparelho não tem câmera disponível. Volte e cole o link mostrado no computador.");
+                status.setText("Este aparelho não tem câmera disponível. Volte e cole o link do seu Acervo.");
                 return;
             }
             camera = Camera.open(cameraId);
@@ -274,7 +274,7 @@ public final class ScannerActivity extends Activity implements SurfaceHolder.Cal
                         handler.post(() -> {
                             long now = android.os.SystemClock.elapsedRealtime();
                             if (now - lastInvalidMessage > 2500 && resumed && !delivered) {
-                                status.setText("Este QR não é uma conexão local do Acervo. Gere um novo QR em Conectar dispositivos no computador.");
+                                status.setText("Este QR não contém um link válido do Acervo. Gere um novo QR em Conectar dispositivos.");
                                 lastInvalidMessage = now;
                             }
                         });

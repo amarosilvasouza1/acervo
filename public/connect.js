@@ -6,7 +6,7 @@
   var esc = AC.esc;
   var icon = AC.icon;
   var C = AC.connect = {
-    ready: false, connected: false, local: false, deviceId: null, devices: [], playback: null,
+    ready: false, connected: false, local: false, admin: false, cloud: false, configured: false, deviceId: null, devices: [], playback: null,
     receivedAt: 0, applying: false, dialog: null, pairing: null, candidate: 0, needsGesture: false
   };
   var events = null;
@@ -24,6 +24,8 @@
   function device(id) { return C.devices.find(function (item) { return item.id === id; }); }
   function activeName() { var active = C.playback && device(C.playback.activeDeviceId); return active ? active.name : 'um dispositivo'; }
   function activeHere() { return C.ready && C.playback && C.playback.activeDeviceId === C.deviceId; }
+  function canManage() { return C.local || C.admin; }
+  function connectionPrompt() { return C.cloud ? 'Entre com a senha do seu Acervo ou use um código criado em um dispositivo já conectado.' : 'No computador, abra Dispositivos e escaneie o QR code com a câmera do celular.'; }
 
   async function api(path, body, method) {
     var headers = { 'Content-Type': 'application/json' };
@@ -44,7 +46,7 @@
   };
   AC.syncCommand = function (type, args) {
     if (C.applying || !C.ready || !C.playback || C.playback.activeDeviceId === C.deviceId) return false;
-    if (!C.connected) { AC.toast('A conexão com o computador caiu. Aguarde a reconexão.', 'error'); return true; }
+    if (!C.connected) { AC.toast(C.cloud ? 'A conexão com seu Acervo caiu. Aguarde a reconexão.' : 'A conexão com o computador caiu. Aguarde a reconexão.', 'error'); return true; }
     if (!C.playback.activeDeviceId) { AC.toast('Escolha onde ouvir em Dispositivos.'); AC.openDevices(); return true; }
     api('/api/connect/command', { type: type, args: args || {} }).catch(function (err) { AC.toast(err.message, 'error'); });
     return true;
@@ -131,7 +133,9 @@
   function acceptSnapshot(snapshot) {
     var previousIds = new Set(C.devices.map(function (item) { return item.id; }));
     if (C.pairing && (snapshot.devices || []).some(function (item) { return !item.local && !previousIds.has(item.id); })) C.pairing = null;
-    C.local = Boolean(snapshot.local); C.deviceId = snapshot.deviceId || C.deviceId;
+    C.local = Boolean(snapshot.local); C.admin = Boolean(snapshot.admin);
+    if (typeof snapshot.cloud === 'boolean') C.cloud = snapshot.cloud;
+    C.deviceId = snapshot.deviceId || C.deviceId;
     C.devices = snapshot.devices || C.devices; C.ready = Boolean(C.deviceId);
     if (snapshot.playback) acceptPlayback(snapshot.playback);
     paintConnection();
@@ -140,15 +144,16 @@
     try { acceptSnapshot(await api('/api/connect/info')); }
     catch (err) { if (err.status === 401) revoke(); }
   }
-  function revoke() {
-    C.ready = false; C.connected = false; C.needsGesture = false;
+  function revoke(message) {
+    C.ready = false; C.connected = false; C.needsGesture = false; C.admin = false;
+    C.deviceId = null; C.devices = []; C.playback = null; C.pairing = null;
     S.authEpoch = (S.authEpoch || 0) + 1;
     if (events) { events.close(); events = null; }
     if (AC.leaveRadio) AC.leaveRadio();
     audio.pause(); S.playing = false; S.current = null; S.queue = []; S.tracks = []; S.jobs = {};
     S.view = 'home'; S.stats = { tracks: 0, artists: 0, duration: 0, plays: 0, avgLufs: null };
     AC.paintPlayback(); AC.render(); paintConnection();
-    showPairingRequired('A conexão foi encerrada. Escaneie um novo QR code no computador.');
+    showPairingRequired(typeof message === 'string' ? message : C.cloud ? 'Sua sessão foi encerrada. Entre novamente ou use um novo QR code.' : 'A conexão foi encerrada. Escaneie um novo QR code no computador.');
   }
   function listen() {
     if (events) events.close();
@@ -179,6 +184,8 @@
       var pairingCode = hash.get('pair');
       if (pairingCode) history.replaceState(null, '', location.pathname + location.search);
       try {
+        var config = await api('/api/connect/config');
+        C.cloud = Boolean(config.cloud); C.configured = true;
         var info;
         if (pairingCode) info = await api('/api/connect/claim', { code: pairingCode, name: deviceName(), kind: kind() });
         else info = await api('/api/connect/info');
@@ -190,7 +197,7 @@
         }
         acceptSnapshot(info); listen(); return true;
       } catch (err) {
-        showPairingRequired(pairingCode ? err.message : 'No computador, abra Dispositivos e escaneie o QR code com a câmera do celular.');
+        showPairingRequired(!C.configured ? 'Não foi possível consultar a conexão com seu Acervo. Confira a internet e tente novamente.' : pairingCode ? err.message : err.status === 401 ? connectionPrompt() : err.message);
         return false;
       }
     })();
@@ -199,18 +206,46 @@
 
   function showPairingRequired(message) {
     C.dialog = 'pair';
-    AC.openModal('<div class="modal-head"><div><h2>Conecte seu Acervo</h2><p>' + esc(message) + '</p></div></div>' +
-      '<div class="connect-help">Deixe o computador ligado e os dois aparelhos no mesmo Wi‑Fi. Use a câmera do celular para abrir o link do QR code.</div>' +
-      '<form id="connect-claim-form"><label for="connect-code">Já tem um código de conexão?</label><input class="seed-select" id="connect-code" autocomplete="off" placeholder="Cole o código mostrado no computador" required>' +
+    if (!C.configured) {
+      AC.openModal('<div class="modal-head"><div><h2>Conecte seu Acervo</h2><p>' + esc(message) + '</p></div></div>' +
+        '<button class="btn btn-accent" data-action="connect-retry">Tentar novamente</button>', 'modal connect-modal');
+      return;
+    }
+    AC.openModal('<div class="modal-head"><div><h2>' + (C.cloud ? 'Entre no seu Acervo' : 'Conecte seu Acervo') + '</h2><p>' + esc(message) + '</p></div></div>' +
+      (C.cloud ? '<div class="connect-help">Acesse sua biblioteca pela internet em qualquer dispositivo.</div>' +
+        '<form id="connect-login-form"><label for="connect-password">Senha do seu Acervo</label><input class="seed-select" type="password" id="connect-password" autocomplete="current-password" required>' +
+        '<button class="btn btn-accent" type="submit">Entrar</button></form>' :
+        '<div class="connect-help">Deixe o computador ligado e os dois aparelhos no mesmo Wi‑Fi. Use a câmera do celular para abrir o link do QR code.</div>') +
+      '<form id="connect-claim-form"><label for="connect-code">Já tem um código de conexão?</label><input class="seed-select" id="connect-code" autocomplete="off" placeholder="Cole o código de conexão" required>' +
       '<button class="btn btn-accent" type="submit">Conectar</button></form><p id="connect-error" class="connect-status" role="status"></p>', 'modal connect-modal');
+    var login = C.cloud && $('connect-login-form');
+    if (login) login.addEventListener('submit', async function (event) {
+      event.preventDefault();
+      if (login.dataset.busy) return;
+      login.dataset.busy = '1';
+      var password = $('connect-password');
+      try {
+        var pending = api('/api/connect/login', { password: password.value, name: deviceName(), kind: kind() });
+        password.value = '';
+        await finishConnection(await pending, 'Você entrou no seu Acervo.');
+      } catch (err) { var error = $('connect-error'); if (error) error.textContent = err.message; }
+      finally { delete login.dataset.busy; }
+    });
     var form = $('connect-claim-form');
     if (form) form.addEventListener('submit', async function (event) {
       event.preventDefault();
+      if (form.dataset.busy) return;
+      form.dataset.busy = '1';
       try {
         var info = await api('/api/connect/claim', { code: $('connect-code').value.trim(), name: deviceName(), kind: kind() });
-        acceptSnapshot(info); listen(); AC.closeModals(); await refreshLibrary(); AC.toast('Dispositivos conectados.');
-      } catch (err) { $('connect-error').textContent = err.message; }
+        await finishConnection(info, 'Dispositivos conectados.');
+      } catch (err) { var error = $('connect-error'); if (error) error.textContent = err.message; }
+      finally { delete form.dataset.busy; }
     });
+  }
+
+  async function finishConnection(info, message) {
+    acceptSnapshot(info); listen(); AC.closeModals(); await refreshLibrary(); AC.toast(message);
   }
 
   function deviceList() {
@@ -219,17 +254,17 @@
       var here = item.id === C.deviceId;
       return '<div class="connect-device' + (active ? ' is-active' : '') + '"><span class="connect-device-icon">' + icon(item.kind === 'mobile' ? 'phone' : 'device', 25) + '</span><div class="connect-device-meta"><b>' + esc(item.name) + (here ? ' · este dispositivo' : '') + '</b><small>' + (active ? 'Saída de áudio atual' : item.online ? 'Disponível' : 'Desconectado') + '</small></div>' +
         (item.online && !active ? '<button class="btn btn-ghost btn-sm" data-action="connect-transfer" data-id="' + esc(item.id) + '">Ouvir aqui</button>' : '') +
-        (C.local && !here ? '<button class="icon-btn" data-action="connect-revoke" data-id="' + esc(item.id) + '" aria-label="Desconectar ' + esc(item.name) + '" title="Desconectar">' + icon('close', 17) + '</button>' : '') + '</div>';
+        (canManage() && !here ? '<button class="icon-btn" data-action="connect-revoke" data-id="' + esc(item.id) + '" aria-label="Desconectar ' + esc(item.name) + '" title="Desconectar">' + icon('close', 17) + '</button>' : '') + '</div>';
     }).join('') || '<p class="tiny">Nenhum outro dispositivo conectado ainda.</p>';
   }
   function pairingHtml() {
-    if (!C.pairing) return '<div class="connect-help"><p>Conecte o celular à mesma rede Wi‑Fi e escaneie o QR code.</p><button class="btn btn-accent" data-action="connect-create">Gerar QR code</button></div>';
+    if (!C.pairing) return '<div class="connect-help"><p>' + (C.cloud ? 'Escaneie o QR code em outro dispositivo para conectar seu Acervo pela internet.' : 'Conecte o celular à mesma rede Wi‑Fi e escaneie o QR code.') + '</p><button class="btn btn-accent" data-action="connect-create">Gerar QR code</button></div>';
     if (Date.now() >= C.pairing.expiresAt) return '<div class="connect-help"><p>Este QR code expirou.</p><button class="btn btn-accent" data-action="connect-create">Gerar outro QR code</button></div>';
     var candidates = C.pairing.candidates || [];
     var selected = candidates[C.candidate] || C.pairing;
-    if (!selected.url || !selected.qrDataUrl) return '<div class="connect-help">Nenhuma rede local encontrada. Conecte o computador ao Wi‑Fi ou ao cabo de rede e tente novamente.</div>';
+    if (!selected.url || !selected.qrDataUrl) return '<div class="connect-help">' + (C.cloud ? 'O endereço público do seu Acervo não está disponível. Confira a configuração do servidor.' : 'Nenhuma rede local encontrada. Conecte o computador ao Wi‑Fi ou ao cabo de rede e tente novamente.') + '</div>';
     return '<div class="connect-qr"><img src="' + esc(selected.qrDataUrl) + '" alt="QR code para conectar o celular ao Acervo" width="220" height="220"></div><p class="connect-help">Abra a câmera do celular e aponte para o QR code. Ele vale por <span id="connect-countdown"></span> e conecta um aparelho.</p>' +
-      (candidates.length > 1 ? '<label for="connect-network">Rede do computador</label><select id="connect-network" class="seed-select">' + candidates.map(function (item, index) { return '<option value="' + index + '"' + (index === C.candidate ? ' selected' : '') + '>' + esc(item.address) + '</option>'; }).join('') + '</select>' : '') +
+      (candidates.length > 1 ? '<label for="connect-network">' + (C.cloud ? 'Endereço de conexão' : 'Rede do computador') + '</label><select id="connect-network" class="seed-select">' + candidates.map(function (item, index) { return '<option value="' + index + '"' + (index === C.candidate ? ' selected' : '') + '>' + esc(item.address) + '</option>'; }).join('') + '</select>' : '') +
       '<div class="connect-copy"><input id="connect-url" readonly value="' + esc(selected.url) + '" aria-label="Link para conectar o celular"><button class="btn btn-ghost btn-sm" data-action="connect-copy">Copiar link</button></div><details class="connect-help"><summary>Usar o código manualmente</summary><code>' + esc(C.pairing.code) + '</code></details>' +
       '<button class="btn btn-quiet btn-sm" data-action="connect-create">Gerar novo QR code</button>';
   }
@@ -260,15 +295,16 @@
     paintDevices(); AC.paintExpandedPlayer();
   }
   AC.openDevices = function () {
-    if (!C.ready) { showPairingRequired('Escaneie um QR code gerado no computador para conectar.'); return; }
+    if (!C.ready) { showPairingRequired(connectionPrompt()); return; }
     C.dialog = 'devices';
     AC.openModal('<div class="modal-head"><div><h2>Seus dispositivos</h2><p id="connect-current"></p></div><button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 20) + '</button></div>' +
       '<div class="connect-devices" id="connect-device-list"></div>' +
       '<p class="connect-help"><a class="btn btn-ghost btn-sm" href="/downloads/acervo.apk">' + icon('download', 16) + ' Baixar APK Android</a></p>' +
-      (C.local ? '<div class="connect-pair-section"><h3>Conectar um celular</h3><div id="connect-pairing"></div></div>' : '<p class="connect-help">Biblioteca, fila e controles são compartilhados com o computador. Escolha um dispositivo para transferir o som.</p>') +
+      (canManage() ? '<div class="connect-pair-section"><h3>Conectar outro dispositivo</h3><div id="connect-pairing"></div></div>' : '<p class="connect-help">Biblioteca, fila e controles são compartilhados entre seus dispositivos. Escolha um dispositivo para transferir o som.</p>') +
+      (C.cloud ? '<button class="btn btn-quiet btn-sm" data-action="connect-logout">Sair deste dispositivo</button>' : '') +
       '<p id="connect-error" class="connect-status" role="status"></p>', 'modal connect-modal');
     paintDevices();
-    if (C.local && (!C.pairing || Date.now() >= C.pairing.expiresAt)) createPairing();
+    if (canManage() && (!C.pairing || Date.now() >= C.pairing.expiresAt)) createPairing();
   };
   async function createPairing() {
     var slot = $('connect-pairing'); if (slot) slot.innerHTML = '<p class="connect-status">Preparando QR code…</p>';
@@ -320,6 +356,14 @@
   AC.playerActions['connect-devices'] = AC.openDevices;
   AC.playerActions['connect-create'] = createPairing;
   AC.playerActions['connect-copy'] = copyLink;
+  AC.playerActions['connect-retry'] = async function () {
+    initialized = null;
+    if (await AC.initConnect()) { AC.closeModals(); await refreshLibrary(); }
+  };
+  AC.playerActions['connect-logout'] = async function () {
+    try { await api('/api/connect/logout', {}); revoke('Você saiu deste dispositivo. Entre novamente para acessar seu Acervo.'); }
+    catch (err) { if (err.status === 401) revoke(); else AC.toast(err.message, 'error'); }
+  };
   AC.playerActions['connect-transfer'] = function (el) { transfer(el.getAttribute('data-id')); };
   AC.playerActions['connect-revoke'] = function (el) {
     api('/api/connect/devices/' + encodeURIComponent(el.getAttribute('data-id')), undefined, 'DELETE').then(refreshInfo).catch(function (err) { AC.toast(err.message, 'error'); });

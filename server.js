@@ -13,15 +13,20 @@ import { createConnectManager } from './lib/connect.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
-const DATA = path.join(ROOT, 'data');
+const DATA = Library.DATA_DIR;
 const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-1.0.0.apk');
+const ANDROID_VERSION = { versionCode: 3, versionName: '1.2.0' };
+const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
-const connect = createConnectManager({ port: PORT, getTrack: Library.get });
+const MODE = process.env.ACERVO_MODE || 'local';
+if (!['local', 'cloud'].includes(MODE)) throw new Error('ACERVO_MODE deve ser local ou cloud.');
+const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: MODE,
+  publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
+  stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -363,7 +368,7 @@ function streamFile(req, res, file, type) {
           'Content-Length': end - start + 1,
           'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
           'Accept-Ranges': 'bytes',
-          'Cache-Control': 'public, max-age=3600'
+          'Cache-Control': 'private, no-store'
         });
         createReadStream(file, { start: start, end: end }).pipe(res);
         return;
@@ -373,7 +378,7 @@ function streamFile(req, res, file, type) {
       'Content-Type': type,
       'Content-Length': total,
       'Accept-Ranges': 'bytes',
-      'Cache-Control': 'public, max-age=3600'
+      'Cache-Control': 'private, no-store'
     });
     createReadStream(file).pipe(res);
   }).catch(function () {
@@ -412,15 +417,23 @@ async function serveStatic(req, res, pathname) {
 const server = http.createServer(async function (req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   const pathname = url.pathname;
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
+    if (req.method === 'GET' && pathname === '/healthz') return sendJson(res, 200, { ok: true });
     const connection = connect.authorize(req, pathname);
     if (await connect.handle(req, res, pathname, connection, readBody, sendJson)) return;
+    if (req.method === 'GET' && pathname === '/api/app/version') {
+      const apk = await readFile(ANDROID_APK).catch(function () { return null; });
+      if (!apk) return sendJson(res, 404, { error: 'Nenhuma atualização Android disponível neste servidor.' });
+      return sendJson(res, 200, { ...ANDROID_VERSION, downloadUrl: '/downloads/acervo.apk', sha256: crypto.createHash('sha256').update(apk).digest('hex') });
+    }
     if (req.method === 'GET' && pathname === '/downloads/acervo.apk') {
       const info = await stat(ANDROID_APK).catch(function () { return null; });
       if (!info || !info.isFile()) return sendJson(res, 404, { error: 'O APK ainda não foi compilado neste computador.' });
       res.writeHead(200, {
         'Content-Type': 'application/vnd.android.package-archive',
-        'Content-Disposition': 'attachment; filename="acervo-1.0.0.apk"',
+        'Content-Disposition': 'attachment; filename="acervo-' + ANDROID_VERSION.versionName + '.apk"',
         'Content-Length': info.size,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff'
@@ -544,7 +557,14 @@ const server = http.createServer(async function (req, res) {
       if (!list) return sendJson(res, 404, { error: 'Faixa nao encontrada.' });
       return sendJson(res, 200, { seed: id, items: list });
     }
-    if (req.method === 'GET') return serveStatic(req, res, pathname);
+    if (req.method === 'GET') {
+      const ua = String(req.headers['user-agent'] || '');
+      if (pathname === '/' && /AcervoAndroid/i.test(ua)) return serveStatic(req, res, '/index.html');
+      if (pathname === '/' || pathname === '/escolher' || pathname === '/escolher/') return serveStatic(req, res, '/escolher.html');
+      if (pathname === '/pc' || pathname === '/pc/') return serveStatic(req, res, '/index.html');
+      if (pathname === '/web' || pathname === '/web/') return serveStatic(req, res, '/web.html');
+      return serveStatic(req, res, pathname);
+    }
     sendJson(res, 405, { error: 'Metodo nao permitido.' });
   } catch (err) {
     if (res.headersSent) return res.end();
@@ -553,5 +573,5 @@ const server = http.createServer(async function (req, res) {
 });
 
 server.listen(PORT, HOST, function () {
-  console.log('Acervo rodando em http://127.0.0.1:' + PORT);
+  console.log(MODE === 'cloud' ? 'Acervo na nuvem: ' + process.env.ACERVO_PUBLIC_ORIGIN : 'Acervo rodando em http://127.0.0.1:' + PORT);
 });

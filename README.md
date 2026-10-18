@@ -31,26 +31,38 @@ npm start
 
 Abra http://127.0.0.1:4310 — ou dê duplo clique em **iniciar.cmd**.
 
-## Celular e conexão por QR code
+## Versões PC e Web
 
-O aplicativo Android instalável está em **releases/acervo-1.0.0.apk**. Você também pode baixá-lo pelo botão **Baixar APK Android** em **Conectar dispositivos**. A partir do celular, esse botão baixa o arquivo pela rede local.
+Na primeira visita, a raiz do Acervo mostra uma tela de escolha. A preferência fica salva no navegador e pode ser trocada a qualquer momento pelo botão de telas no topo do app.
 
-Transfira o APK para o Android, abra o arquivo e autorize a instalação pelo aplicativo de arquivos/navegador quando o sistema solicitar. Ao abrir o Acervo instalado, toque em **Escanear QR code**, permita a câmera e escaneie um novo QR gerado pelo computador. Também é possível colar o link de conexão. Requisitos: Android 8 ou superior, Android System WebView atualizado e acesso ao computador na mesma rede local.
+- **/pc** — versão PC: sidebar, fila, player expandido e o fluxo completo de download.
+- **/web** — versão Web: interface de celular com abas inferiores e mini player, exibida em uma moldura no desktop e em tela cheia no celular.
+- **/escolher** — tela de escolha; use `?choose=1` para ignorar a preferência salva.
 
-O APK mantém a conexão dentro do aplicativo e usa o computador como biblioteca. Não inclui um servidor independente, armazenamento offline de músicas ou garantia de reprodução em segundo plano. Veja **android/README.md** para o código-fonte e a compilação.
+O app Android ignora a escolha e abre direto na biblioteca quando acessa o servidor pelo WebView.
 
-A interface adapta-se ao celular com quatro abas inferiores, controles de toque e um mini player. Toque na capa ou no nome da faixa para abrir o reprodutor completo.
+## Android independente e conexão entre dispositivos
 
-1. Abra o Acervo no computador em **http://127.0.0.1:4310** e clique no ícone **Conectar dispositivos** no cabeçalho ou no player.
-2. Mantenha computador e celular na mesma rede local (o computador pode estar conectado por cabo).
-3. Use a câmera do celular para escanear o QR code e abra o link. A biblioteca, a fila, a faixa atual e os controles passam a se comunicar em tempo real.
-4. Escolha **Ouvir aqui** na lista de dispositivos para transferir o áudio, mantendo a faixa e sua posição. Se o navegador do destino pedir uma interação, toque em **play** nesse aparelho.
+Instale [releases/acervo-1.2.0.apk](releases/acervo-1.2.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo.
 
-O computador hospeda as músicas e precisa ficar ligado, com o servidor aberto. O celular pode controlar a reprodução do computador ou receber o áudio pela rede. Downloads iniciados em um aparelho aparecem na biblioteca do outro. O histórico de escuta também alimenta a rádio em ambos.
+Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
-Cada QR code vale por cinco minutos e conecta um aparelho. Gere outro para conectar mais um. O acesso pareado pode ser removido pelo computador; reiniciar o servidor exige ler um novo QR code. Se houver várias placas de rede, selecione no diálogo o endereço da rede Wi‑Fi/Ethernet usada pelo celular. O link também pode ser copiado.
+O Android guarda M4A ou WebM de áudio, conforme a fonte. A conversão para MP3, a normalização em −14 LUFS e a análise de timbre continuam no servidor do PC. Nesta versão, o player nativo pausa ao sair do aplicativo. Desinstalar apaga a biblioteca local; atualizar com a mesma assinatura mantém os dados.
 
-O Acervo aceita conexões da rede privada e exige pareamento para ler ou alterar o acervo a partir de outro aparelho. Se o Windows exibir uma solicitação de rede para o Node.js, permita a sua rede privada para alcançar o computador pelo celular. O aplicativo não altera o firewall nem configura acesso pela internet.
+Para conectar as duas versões:
+
+1. No computador, abra **http://127.0.0.1:4310** e gere um QR em **Conectar dispositivos**.
+2. No APK, use **Escanear QR code**. Links locais precisam do computador ligado e acessível pela rede; um servidor HTTPS configurado permite conexão pela internet.
+3. O modo conectado compartilha biblioteca, fila e controles em tempo real. **Ouvir aqui** transfere a reprodução entre as telas conectadas.
+4. Na barra nativa do modo conectado, toque em **Sincronizar** para comparar os catálogos. Músicas faltantes são baixadas no celular e pedidos de download são enviados ao PC. Nada é apagado; cada versão mantém sua cópia e seu histórico. Os pedidos no PC continuam sujeitos ao progresso da fila de importação.
+
+O celular continua independente depois da sincronização. Controlar um computador desligado e trocar dados com ele enquanto está inacessível exige aguardar sua volta. Uma biblioteca central hospedada é uma opção adicional, documentada em [docs/cloud.md](docs/cloud.md); nenhum servidor foi contratado ou publicado.
+
+Cada QR vale cinco minutos e conecta um aparelho. O acesso pode ser removido por quem administra a biblioteca. O modo local exige novo QR após reiniciar o servidor; o modo nuvem preserva sessões em armazenamento permanente. Se houver várias placas de rede, escolha o endereço Wi‑Fi/Ethernet usado pelo celular.
+
+O botão **Atualizar aplicativo** consulta novas versões no servidor lembrado ou nas releases do repositório no GitHub. No modo independente, usa as releases do GitHub. A atualização valida o pacote e a mesma assinatura antes de abrir o instalador do Android. Versões futuras precisam ser publicadas com APK e checksum; a ausência de release é informada na tela. A primeira instalação ainda usa o APK entregue aqui. Veja [android/README.md](android/README.md) para compilação, assinatura e publicação.
+
+No modo local, o servidor aceita redes privadas e exige pareamento em outro aparelho. Se o Windows solicitar acesso de rede para o Node.js, permita a sua rede privada. O aplicativo não abre portas no roteador nem altera o firewall.
 
 Para voltar a restringir o servidor ao próprio computador:
 
@@ -113,6 +125,8 @@ tests/             testes de backend e de interface (Node test runner)
 ## API
 
 - GET /api/health — estado e número de faixas
+- GET /healthz — verificação pública mínima para a hospedagem
+- GET /api/app/version — versão Android e checksum do APK disponível
 - GET /api/search?q= — busca no YouTube (cache de 5 min)
 - POST /api/import — { videoId | url | query }; retorna jobId
 - GET /api/jobs/:id — progresso/etapa/erro
@@ -128,6 +142,9 @@ tests/             testes de backend e de interface (Node test runner)
 - POST /api/connect/register — registra o player local do computador
 - POST /api/connect/pairing — gera QR code no computador
 - POST /api/connect/claim — troca o código de pareamento por uma sessão do aparelho
+- GET /api/connect/config — informa se o servidor está no modo nuvem
+- POST /api/connect/login — entrada por senha no modo nuvem
+- POST /api/connect/logout — encerra a sessão no modo nuvem
 - GET /api/connect/events — eventos de dispositivos, comandos, player e biblioteca por SSE
 - POST /api/connect/state — estado do player enviado pela saída de áudio ativa
 - POST /api/connect/command — controle remoto e transferência entre aparelhos

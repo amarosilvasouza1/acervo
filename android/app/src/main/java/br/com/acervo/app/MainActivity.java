@@ -33,7 +33,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-/** A local companion: the existing Acervo server owns the library and pairing. */
+/** Connects to a paired Acervo server, hosted locally or over HTTPS. */
 public final class MainActivity extends Activity {
     private static final int SCAN_REQUEST = 20;
     private static final int BG = Color.rgb(18, 18, 18);
@@ -82,19 +82,33 @@ public final class MainActivity extends Activity {
         body.addView(text("SUA MÚSICA, EM QUALQUER TELA", 10, GREEN, true));
         TextView title = text("acervo mobile", 36, Color.WHITE, true);
         add(body, title, 8);
-        TextView intro = text("Sua biblioteca e seus controles, agora no celular.", 17, MUTED, false);
+        TextView intro = text("Busque, baixe e ouça suas músicas direto no celular.", 17, MUTED, false);
         intro.setLineSpacing(dp(4), 1);
         add(body, intro, 12);
 
-        Button scan = button("Escanear QR code", true);
+        Button independent = button("Usar neste celular", true);
+        independent.setOnClickListener(v -> startActivity(new Intent(this, StandaloneActivity.class)));
+        add(body, independent, 30);
+        add(body, text("Funciona com a internet do celular, mesmo com o computador desligado. Downloads ficam disponíveis sem conexão.", 13, MUTED, false), 10);
+
+        Button update = button("Atualizar aplicativo", false);
+        update.setOnClickListener(v -> AppUpdater.check(this, preferences.getString("server_origin", null)));
+        add(body, update, 14);
+
+        Button licenses = button("Sobre e licenças", false);
+        licenses.setOnClickListener(v -> AppLicenses.show(this));
+        add(body, licenses, 8);
+
+        add(body, text("CONECTAR A OUTRO ACERVO", 10, MUTED, true), 30);
+        Button scan = button("Escanear QR code", false);
         scan.setOnClickListener(v -> startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_REQUEST));
-        add(body, scan, 30);
+        add(body, scan, 12);
 
         String remembered = preferences.getString("server_origin", null);
         if (remembered != null) {
             try {
                 final PairingLink previous = PairingLink.parse(remembered);
-                Button reconnect = button("Reconectar ao computador", false);
+                Button reconnect = button("Reconectar ao Acervo", false);
                 reconnect.setOnClickListener(v -> connect(previous));
                 add(body, reconnect, 10);
                 TextView address = text(previous.origin, 12, MUTED, false);
@@ -110,14 +124,14 @@ public final class MainActivity extends Activity {
             add(body, notice, 18);
         }
 
-        add(body, text("OU COLE O LINK DO COMPUTADOR", 10, MUTED, true), 30);
+        add(body, text("OU COLE O LINK DO SEU ACERVO", 10, MUTED, true), 30);
         EditText input = new EditText(this);
         input.setSingleLine(true);
         input.setTextSize(14);
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(MUTED);
-        input.setHint("http://192.168.1.10:4310/#pair=…");
-        input.setContentDescription("Link do Acervo mostrado no computador");
+        input.setHint("https://seu-acervo.exemplo.com/#pair=…");
+        input.setContentDescription("Link HTTPS do Acervo na nuvem ou link da rede local");
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         input.setBackground(rounded(CARD, 12));
         input.setPadding(dp(16), dp(15), dp(16), dp(15));
@@ -140,9 +154,9 @@ public final class MainActivity extends Activity {
         steps.setPadding(dp(18), dp(18), dp(18), dp(18));
         steps.setBackground(rounded(Color.rgb(27, 27, 27), 16));
         steps.addView(text("Conecte em poucos segundos", 16, Color.WHITE, true));
-        add(steps, text("1  Abra o Acervo no computador.\n2  Entre em Conectar dispositivos.\n3  Gere o QR code e escaneie aqui.", 14, MUTED, false), 12);
+        add(steps, text("1  Abra seu Acervo no navegador.\n2  Entre em Conectar dispositivos.\n3  Gere o QR code e escaneie aqui.", 14, MUTED, false), 12);
         add(body, steps, 28);
-        TextView note = text("Use a mesma rede Wi-Fi e mantenha o Acervo aberto no computador. A biblioteca, a fila e os controles são compartilhados. Para tocar neste celular, escolha este aparelho em Dispositivos.", 12, MUTED, false);
+        TextView note = text("Com seu Acervo hospedado na nuvem e um link HTTPS, use Wi-Fi ou dados móveis mesmo com o computador desligado. Um link local (http://192.168…) precisa do computador ligado na mesma rede. Para tocar neste celular, escolha este aparelho em Dispositivos.", 12, MUTED, false);
         note.setLineSpacing(dp(3), 1);
         add(body, note, 20);
         body.setFocusableInTouchMode(true);
@@ -176,6 +190,9 @@ public final class MainActivity extends Activity {
         Button reload = compactButton("Atualizar");
         reload.setOnClickListener(v -> navigate(selectedOrigin + "/"));
         toolbar.addView(reload);
+        Button sync = compactButton("Sincronizar");
+        sync.setOnClickListener(v -> DeviceSync.sync(this, selectedOrigin));
+        toolbar.addView(sync);
         Button home = compactButton("Conexão");
         home.setOnClickListener(v -> showHome(null));
         toolbar.addView(home);
@@ -195,7 +212,7 @@ public final class MainActivity extends Activity {
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.0 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.2 Mobile");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setWebChromeClient(new WebChromeClient());
@@ -315,7 +332,10 @@ public final class MainActivity extends Activity {
         panel.setPadding(dp(28), dp(24), dp(28), dp(24));
         panel.setBackgroundColor(BG);
         panel.addView(text("Vamos reconectar", 30, Color.WHITE, true));
-        add(panel, text("Não foi possível acessar o Acervo no computador. Verifique se ele está ligado, com o Acervo aberto, e se os dois aparelhos usam a mesma rede Wi-Fi.", 16, MUTED, false), 16);
+        String help = selectedOrigin.startsWith("https://")
+                ? "Não foi possível acessar seu Acervo. Confira a internet do celular, o endereço e se o servidor está disponível. Se este for um endereço da nuvem, o computador pode ficar desligado."
+                : "Não foi possível acessar o Acervo na rede local. Confira se o computador está ligado, com o Acervo aberto, e se os aparelhos usam a mesma rede. Para usar de outras redes com o computador desligado, conecte a uma instalação do Acervo na nuvem por HTTPS.";
+        add(panel, text(help, 16, MUTED, false), 16);
         add(panel, text(selectedOrigin, 12, MUTED, false), 12);
         Button retry = button("Tentar novamente", true);
         retry.setOnClickListener(v -> navigate(retryUrl == null ? selectedOrigin + "/" : retryUrl));

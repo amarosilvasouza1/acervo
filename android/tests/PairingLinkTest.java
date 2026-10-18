@@ -1,6 +1,6 @@
 package br.com.acervo.app;
 
-/** Standalone JVM regression tests for the user supplied LAN/QR trust boundary. */
+/** Standalone JVM regression tests for user supplied LAN/cloud QR trust boundaries. */
 public final class PairingLinkTest {
     private static int assertions;
     private static final String TOKEN = "4O0jMsz_Bs9YD2xHhQ3rY8kEbP6NfvZWaLG7a-CuTqI";
@@ -14,6 +14,15 @@ public final class PairingLinkTest {
         equal("http://172.31.255.254:65535", PairingLink.parse("http://172.31.255.254:65535/").origin, "Maximum valid port");
         equal("http://192.168.0.2/#pair=" + "a".repeat(16), PairingLink.parse("http://192.168.0.2/#pair=" + "a".repeat(16)).url, "Minimum token boundary");
         equal("http://192.168.0.2/#pair=" + "_".repeat(256), PairingLink.parse("http://192.168.0.2/#pair=" + "_".repeat(256)).url, "Maximum token boundary");
+        PairingLink cloud = PairingLink.parse("https://music.example.com/#pair=" + TOKEN);
+        equal("https://music.example.com", cloud.origin, "Cloud origin saved without QR secret");
+        equal("https://music.example.com/#pair=" + TOKEN, cloud.url, "HTTPS pairing token survives scanner boundary");
+        equal("https://music.example.com/", PairingLink.parse("HTTPS://MUSIC.EXAMPLE.COM:443/").url, "HTTPS default port and case normalization");
+        equal("https://music.example.com:8443/", PairingLink.parse("https://music.example.com:8443").url, "Custom HTTPS server port");
+        equal("https://8.8.8.8/", PairingLink.parse("https://8.8.8.8/").url, "HTTPS public IPv4 literal");
+        equal("https://[2001:4860:4860::8888]/", PairingLink.parse("https://[2001:4860:4860::8888]:443/").url, "HTTPS public IPv6 literal");
+        equal("https://xn--bcher-kva.example/", PairingLink.parse("https://xn--bcher-kva.example/").url, "Explicit ASCII internationalized domain");
+        equal("https://192.168.1.10:4313/", PairingLink.parse("https://192.168.1.10:4313/").url, "HTTPS also supported on a private address");
 
         // All edges of the RFC1918 172.16/12 range, without consulting DNS.
         for (int second = 0; second <= 255; second++) {
@@ -27,7 +36,7 @@ public final class PairingLinkTest {
         }
 
         for (String rejected : new String[] {
-            null, "", "https://192.168.1.10:4313/", "ftp://192.168.1.10/", "file:///192.168.1.10/", "javascript:alert(1)",
+            null, "", "ftp://192.168.1.10/", "file:///192.168.1.10/", "javascript:alert(1)",
             "http://example.com/", "http://localhost/", "http://127.0.0.1/", "http://8.8.8.8/", "http://[::1]/", "http://[fd00::1]/",
             "http://192.168.1.10.evil.example/", "http://192.168.1.10@evil.example/", "http://evil.example@192.168.1.10/", "http://user:password@192.168.1.10/",
             "http://%31%39%32.168.1.10/", "http://192.168.1.10%2f.evil.example/", "http://192.168.1.10\\@evil.example/", "http://192.168.1.10\n.evil.example/",
@@ -38,6 +47,21 @@ public final class PairingLinkTest {
             "http://192.168.1.10/#pair=" + TOKEN + "&next=https://evil.example", "http://192.168.1.10/#pair=" + TOKEN + "%0a", "http://192.168.1.10/#pair=" + TOKEN + "#other", "a".repeat(2049)
         }) reject(rejected);
 
+        for (String rejected : new String[] {
+            "https://localhost/", "https://acervo/", "https://music.example.com./", "https://music..example.com/",
+            "https://-music.example.com/", "https://music-.example.com/", "https://music_1.example.com/",
+            "https://" + "a".repeat(64) + ".example.com/", "https://bücher.example/", "https://%6dic.example.com/",
+            "https://music.example.com@evil.example/", "https://user:password@music.example.com/",
+            "https://music.example.com:/", "https://music.example.com:0443/", "https://music.example.com:+443/",
+            "https://music.example.com:0/", "https://music.example.com:65536/", "https://music.example.com:-1/",
+            "https://music.example.com/?", "https://music.example.com/?pair=" + TOKEN,
+            "https://music.example.com/api/", "https://music.example.com//", "https://music.example.com/%2f",
+            "https://music.example.com/#pair=short", "https://music.example.com/#pair=" + TOKEN + "&next=elsewhere",
+            "https://music.example.com\\@evil.example/", "https://music.example.com\n.evil.example/",
+            "https://[fe80::1%25wlan0]/", "https://[not:ipv6]/", "https://2130706433/", "https://127.1/",
+            "https://0177.0.0.1/", "https://0x7f.0.0.1/", "https://10.0.0.256/", "music.example.com/"
+        }) reject(rejected);
+
         for (String same : new String[] { "http://192.168.1.10:4313/", "http://192.168.1.10:4313/api/tracks", "http://192.168.1.10:4313/#pair=" + TOKEN, "http://192.168.1.10:4313/api/stream/track?q=x" }) {
             check(PairingLink.isSameOrigin(same, qr.origin), "Navigation inside paired server: " + same);
         }
@@ -46,6 +70,18 @@ public final class PairingLinkTest {
         }
         check(PairingLink.isSameOrigin("http://192.168.1.10/", "http://192.168.1.10:80"), "HTTP default ports are equivalent");
         check(!PairingLink.isSameOrigin("http://192.168.1.10/", null), "Missing trusted origin");
+        for (String same : new String[] {
+            "https://music.example.com/", "https://MUSIC.EXAMPLE.COM:443/api/tracks",
+            "https://music.example.com/api/stream/track?offset=5", "https://music.example.com/#pair=" + TOKEN
+        }) check(PairingLink.isSameOrigin(same, cloud.origin), "HTTPS navigation inside paired server: " + same);
+        for (String other : new String[] {
+            "http://music.example.com/", "http://music.example.com:443/", "https://music.example.com:80/",
+            "https://music.example.com:8443/", "https://music.example.com.evil.example/",
+            "https://evil.example/", "https://user@music.example.com/", "https://music.example.com:/",
+            "https://music.example.com:0443/", "https://music.example.com\\@evil.example/"
+        }) check(!PairingLink.isSameOrigin(other, cloud.origin), "Block different or ambiguous HTTPS origin: " + other);
+        check(!PairingLink.isSameOrigin("https://music.example.com/", "http://music.example.com/"), "Trusted HTTP origin cannot become HTTPS implicitly");
+        check(PairingLink.isSameOrigin("https://[2001:4860:4860::8888]/api/tracks", "https://[2001:4860:4860::8888]:443"), "HTTPS IPv6 default ports equivalent");
         System.out.println("PairingLink: " + assertions + " assertions passed.");
     }
 

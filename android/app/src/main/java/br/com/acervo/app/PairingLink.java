@@ -2,8 +2,9 @@ package br.com.acervo.app;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Locale;
 
-/** Restricts a connection to a literal private IPv4 address; never resolves DNS. */
+/** Accepts a secure server origin, or an unencrypted literal LAN address; never resolves DNS. */
 public final class PairingLink {
     public final String origin;
     public final String url;
@@ -22,19 +23,12 @@ public final class PairingLink {
         if (!value.contains("://")) value = "http://" + value;
         try {
             URI uri = new URI(value);
-            String host = uri.getHost();
-            if (!"http".equalsIgnoreCase(uri.getScheme()) || uri.getRawUserInfo() != null
-                    || !isPrivateIPv4(host) || uri.getRawQuery() != null) throw invalid();
-            int port = uri.getPort();
-            if (port == 0 || port > 65535 || port < -1) throw invalid();
-            // Reject malformed, empty and ambiguous port syntax instead of normalizing it.
-            String authority = host + (port == -1 ? "" : ":" + port);
-            if (!authority.equals(uri.getRawAuthority())) throw invalid();
+            String origin = originOf(uri);
+            if (origin == null || uri.getRawQuery() != null) throw invalid();
             String path = uri.getRawPath();
             if (path != null && !path.isEmpty() && !"/".equals(path)) throw invalid();
             String fragment = uri.getRawFragment();
             if (fragment != null && !fragment.matches("pair=[A-Za-z0-9_-]{16,256}")) throw invalid();
-            String origin = "http://" + host + (port == -1 || port == 80 ? "" : ":" + port);
             return new PairingLink(origin, origin + "/" + (fragment == null ? "" : "#" + fragment));
         } catch (URISyntaxException ex) {
             throw invalid();
@@ -57,19 +51,57 @@ public final class PairingLink {
     public static boolean isSameOrigin(String url, String trustedOrigin) {
         if (url == null || trustedOrigin == null) return false;
         try {
-            URI candidate = new URI(url);
-            URI trusted = new URI(trustedOrigin);
-            int candidatePort = candidate.getPort() == -1 ? 80 : candidate.getPort();
-            int trustedPort = trusted.getPort() == -1 ? 80 : trusted.getPort();
-            return "http".equalsIgnoreCase(candidate.getScheme()) && candidate.getRawUserInfo() == null
-                    && candidate.getHost() != null && candidate.getHost().equals(trusted.getHost())
-                    && candidatePort == trustedPort;
+            String candidate = originOf(new URI(url));
+            String trusted = originOf(new URI(trustedOrigin));
+            return candidate != null && candidate.equals(trusted);
         } catch (URISyntaxException ex) {
             return false;
         }
     }
 
+    private static String originOf(URI uri) {
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if (scheme == null || host == null || uri.getRawUserInfo() != null) return null;
+        scheme = scheme.toLowerCase(Locale.US);
+        host = host.toLowerCase(Locale.US);
+        if (!("https".equals(scheme) && isHttpsHost(host))
+                && !("http".equals(scheme) && isPrivateIPv4(host))) return null;
+        int port = uri.getPort();
+        if (port == 0 || port > 65535 || port < -1) return null;
+        // Reject empty, signed, padded or otherwise ambiguous port syntax.
+        String authority = host + (port == -1 ? "" : ":" + port);
+        if (!authority.equalsIgnoreCase(uri.getRawAuthority())) return null;
+        int defaultPort = "https".equals(scheme) ? 443 : 80;
+        return scheme + "://" + host + (port == -1 || port == defaultPort ? "" : ":" + port);
+    }
+
+    private static boolean isHttpsHost(String host) {
+        // java.net.URI checks IPv6 syntax. Exclude scoped literals, which are local
+        // interface references and interpreted differently across URL parsers.
+        if (host.startsWith("[") && host.endsWith("]")) return host.indexOf('%') < 0;
+        if (host.length() > 253 || !host.matches("[a-z0-9.-]+")) return false;
+        if (host.matches("[0-9.]+")) {
+            String[] parts = host.split("\\.", -1);
+            if (parts.length != 4) return false;
+            for (String part : parts) {
+                if (part.isEmpty() || part.length() > 3 || (part.length() > 1 && part.charAt(0) == '0')
+                        || Integer.parseInt(part) > 255) return false;
+            }
+            return true;
+        }
+        // Unicode names must be supplied in their explicit ASCII (punycode) form.
+        // Disallow single-label and all-numeric final labels to avoid browsers'
+        // legacy numeric-IP interpretation.
+        String[] labels = host.split("\\.", -1);
+        if (labels.length < 2 || labels[labels.length - 1].matches("[0-9]+")) return false;
+        for (String label : labels) {
+            if (label.length() < 1 || label.length() > 63 || label.startsWith("-") || label.endsWith("-")) return false;
+        }
+        return true;
+    }
+
     private static IllegalArgumentException invalid() {
-        return new IllegalArgumentException("Use o link do QR code do Acervo ou um endereço local como http://192.168.1.10:4310. Celular e computador precisam estar na mesma rede Wi-Fi.");
+        return new IllegalArgumentException("Use o link do QR code, o endereço HTTPS do seu Acervo na nuvem ou um endereço local como http://192.168.1.10:4310. Links locais precisam do computador ligado na mesma rede.");
     }
 }

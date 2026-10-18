@@ -1,0 +1,17 @@
+# Send only runtime source and public APKs to the Docker daemon.
+**
+!Dockerfile
+!package.json
+!package-lock.json
+!server.js
+!lib/
+!lib/**
+!public/
+!public/**
+!releases/
+!releases/*.apk
+!releases/*.sha256
+!deploy/
+!deploy/requirements.txt
+!deploy/yt-dlp.conf
+!deploy/import-data.mjs

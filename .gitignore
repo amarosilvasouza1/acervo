@@ -10,6 +10,7 @@ android/signing/
 android/build/
 android/app/build/
 android/.gradle/
+android/.kotlin/
 android/local.properties
 android/tests/classes/
 android/tests/generated/
@@ -19,3 +20,10 @@ android/tests/generated/
 *.tmp
 .DS_Store
 Thumbs.db
+
+# configuração privada da hospedagem
+deploy/cloud.env
+deploy/cloud-data/
+
+# pacote de fontes gerado (pertence à release, não ao histórico)
+releases/*-source.zip

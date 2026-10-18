@@ -1,0 +1,18 @@
+{$ACERVO_DOMAIN} {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+    }
+
+    reverse_proxy acervo:4310 {
+        # Preserve the configured HTTPS origin; never trust a client's proxy headers.
+        header_up Host {http.request.host}
+        header_up -Forwarded
+        header_up -X-Forwarded-For
+        header_up -X-Forwarded-Host
+        header_up -X-Forwarded-Proto
+        # Radio results and device events must arrive as they are generated.
+        flush_interval -1
+    }
+}
