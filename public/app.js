@@ -438,7 +438,7 @@
     if (now - resumeSavedAt > 5000) { resumeSavedAt = now; saveResume(); }
   });
   audio.addEventListener('pause', saveResume);
-  window.addEventListener('pagehide', saveResume);
+  if (typeof window.addEventListener === 'function') window.addEventListener('pagehide', saveResume);
   audio.addEventListener('timeupdate', paintProgress);
   audio.addEventListener('loadedmetadata', paintProgress);
   audio.addEventListener('play', function () { if (AC.isRemotePlayback && AC.isRemotePlayback()) { audio.pause(); return; } state.playing = true; setPlayIcon(); if (AC.notifyPlayback) AC.notifyPlayback(true); });
