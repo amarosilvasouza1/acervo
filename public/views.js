@@ -39,7 +39,7 @@
     var unseen = true;
     try { unseen = localStorage.getItem('acervo:newsSeen') !== NEWS_VERSION; } catch (e) {}
     if (!unseen) return '';
-    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades 1.3.2</span><strong>Tela desligada, notificação no modo conectado e aleatório inteligente</strong><p>O player segura CPU e Wi-Fi, os controles aparecem também no modo PC e o shuffle não repete artistas.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
+    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades ' + NEWS_VERSION + '</span><strong>Notificação com capa, configurações e playlists</strong><p>Player repaginado, opções de download/offline e importação de playlist do YouTube em um link.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
   }
 
   function openNews() {
@@ -124,11 +124,8 @@
     var listened = S.tracks.filter(function (t) { return t.lastPlayedAt; }).sort(function (a, b) { return new Date(b.lastPlayedAt) - new Date(a.lastPlayedAt); });
     var picks = (listened.length ? listened.concat(S.tracks.filter(function (t) { return !t.lastPlayedAt; })) : S.tracks).slice(0, 6);
     var filters = '<div class="home-filters"><button class="filter-chip is-active" data-action="nav" data-view="home">Tudo</button><button class="filter-chip" data-action="nav" data-view="library">Músicas</button><button class="filter-chip" data-action="nav" data-view="radio">Rádio</button></div>';
-    var quick = picks.length ? '<div class="quick-grid">' + picks.map(function (t) {
-      return '<button class="quick-item" data-action="play-track" data-id="' + esc(t.id) + '"><span class="quick-cover">' + AC.coverHtml(t, true) + '</span><span class="quick-title">' + esc(t.title) + '</span><span class="quick-play" aria-hidden="true">' + icon('play', 17) + '</span></button>';
-    }).join('') + '</div>' : '';
     var banner = '<section class="radio-banner"><div class="radio-art">' + icon('radio', 55) + '</div><div class="radio-banner-copy"><span class="radio-kicker">FEITA A PARTIR DO SEU SOM</span><h2>O que vem depois?</h2><p>Descubra músicas que combinam com o que você ouve. Sua rádio busca novidades em tempo real.</p><button class="btn btn-light" data-action="nav" data-view="radio">' + icon('radio', 16) + ' Explorar minha rádio</button></div></section>';
-    return '<div class="view home-view">' + filters + quick + newsBanner() +
+    return '<div class="view home-view">' + filters + newsBanner() +
       (recent.length ? '<section class="section"><div class="section-head"><h2>De volta ao seu som</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid">' + picks.map(cardHtml).join('') + '</div></section>' : emptyHome()) + banner +
       (listened.length ? '<section class="section"><div class="section-head"><h2>Ouvidas recentemente</h2><button class="link" data-action="start-radio">Descobrir parecidas</button></div><div class="grid">' + listened.slice(0, 6).map(cardHtml).join('') + '</div></section>' : '') +
       (recent.length ? '<section class="section"><div class="section-head"><h2>Adicionadas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid">' + recent.map(cardHtml).join('') + '</div></section>' : '') + '</div>';
@@ -375,6 +372,7 @@
       return '<div class="view">' + head +
         '<div class="empty"><div class="empty-mark">' + icon('queue', 24) + '</div><h2>Suas playlists ficam aqui</h2>' +
         '<p>Cole o link de uma playlist do YouTube. O Acervo baixa as faixas em sequência e mantém a lista para tocar depois.</p>' +
+        '<div class="playlist-steps"><span>1. Cole o link</span><span>2. O Acervo baixa</span><span>3. Toque quando quiser</span></div>' +
         '<button class="btn btn-accent" data-action="open-download">Importar uma playlist</button></div></div>';
     }
     var cards = list.map(function (p) {
@@ -427,6 +425,13 @@
         '<section class="panel"><h3>Reprodução</h3>' +
           settingRow('resume', 'Continuar de onde parou', 'Restaura a última faixa e a posição ao abrir o app.') +
           '<p class="tiny" style="margin-top:10px">O timer de sono e o aleatório inteligente ficam no player.</p>' +
+        '</section>' +
+        '<section class="panel"><h3>Sobre</h3>' +
+          '<p class="tiny">Acervo ' + NEWS_VERSION + ' · player, biblioteca e conexão entre PC e celular.</p>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
+            '<button class="btn btn-ghost btn-sm" data-action="whats-new">' + icon('sparkles', 14) + ' Ver novidades</button>' +
+            '<button class="btn btn-quiet btn-sm" data-action="open-offline"' + (bridge ? '' : ' disabled') + '>' + icon('phone', 14) + ' Ouvir offline</button>' +
+          '</div>' +
         '</section>' +
       '</div></div>';
   }

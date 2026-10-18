@@ -15,8 +15,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css">
-<link rel="stylesheet" href="/mobile.css?v=5">
+<link rel="stylesheet" href="/styles.css?v=6">
+<link rel="stylesheet" href="/mobile.css?v=6">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231ed760'/%3E%3Cpath d='M8 13v6M12 9v14M16 11v10M20 7v18M24 13v6' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -59,17 +59,15 @@
       <button class="library-title" data-action="nav" data-view="library"><span data-ico="library"></span>Sua biblioteca</button>
       <button class="icon-btn library-add" data-action="open-download" aria-label="Adicionar música à biblioteca" title="Adicionar música"><span aria-hidden="true">+</span></button>
     </div>
-    <nav class="nav" aria-label="Explorar">
+    <nav class="nav" aria-label="Navegação">
+      <span class="nav-label">Explorar</span>
       <button class="nav-item is-active" data-action="nav" data-view="home"><span class="nav-ico" data-ico="home"></span><span>Início</span></button>
       <button class="nav-item" data-action="nav" data-view="search"><span class="nav-ico" data-ico="search"></span><span>Buscar</span></button>
-      <button class="nav-item" data-action="nav" data-view="radio"><span class="nav-ico" data-ico="radio"></span><span>Sua rádio</span></button>
+      <button class="nav-item" data-action="nav" data-view="radio" title="Sua rádio"><span class="nav-ico" data-ico="radio"></span><span>Rádio</span></button>
+      <span class="nav-label">Coleções</span>
+      <button class="nav-item" data-action="nav" data-view="library"><span class="nav-ico" data-ico="library"></span><span>Músicas</span></button>
       <button class="nav-item" data-action="nav" data-view="playlists"><span class="nav-ico" data-ico="queue"></span><span>Playlists</span></button>
-      <button class="nav-item" data-action="nav" data-view="settings"><span class="nav-ico" data-ico="settings"></span><span>Configurações</span></button>
     </nav>
-    <div class="library-chips">
-      <button class="chip" data-action="nav" data-view="library">Músicas</button>
-      <button class="chip" data-action="nav" data-view="radio">Rádios</button>
-    </div>
     <div class="library-sort"><span>Seu acervo</span><span>Recentes <span data-ico="queue"></span></span></div>
     <div class="sidebar-tracks" id="sidebar-tracks"></div>
     <div class="sidebar-foot">
@@ -77,6 +75,7 @@
       <span class="hide" aria-hidden="true"><span id="stat-artists">0</span><span id="stat-lufs">—</span></span>
       <button class="side-link" data-action="open-download"><span data-ico="download"></span>Adicionar ao acervo</button>
       <button class="side-link" data-action="whats-new"><span data-ico="sparkles"></span>Novidades</button>
+      <button class="side-link" data-action="nav" data-view="settings"><span data-ico="settings"></span>Configurações</button>
       <button class="side-link" data-action="save-all-offline" id="save-all-link" hidden><span data-ico="download"></span>Salvar biblioteca no celular</button>
       <button class="side-link" data-action="open-offline" id="offline-link" hidden><span data-ico="phone"></span>Ouvir offline</button>
     </div>
@@ -140,9 +139,9 @@
 <div class="toast-wrap" id="toast-wrap" aria-live="polite"></div>
 
 <audio id="audio" preload="metadata"></audio>
-<script src="/app.js?v=5" defer></script>
-<script src="/radio.js?v=5" defer></script>
+<script src="/app.js?v=6" defer></script>
+<script src="/radio.js?v=6" defer></script>
 <script src="/connect.js?v=6" defer></script>
-<script src="/views.js?v=5" defer></script>
+<script src="/views.js?v=6" defer></script>
 </body>
 </html>
