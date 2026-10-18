@@ -11,7 +11,9 @@ import android.graphics.drawable.Icon;
 import android.media.MediaMetadata;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.net.wifi.WifiManager;
 import android.os.Build;
+import android.os.PowerManager;
 import android.os.IBinder;
 
 /** Keeps audio alive when the activity is minimized and exposes media controls in the notification shade. */
@@ -36,6 +38,8 @@ public final class PlaybackService extends Service {
     private String title = "";
     private String artist = "";
     private boolean playing;
+    private PowerManager.WakeLock wake;
+    private WifiManager.WifiLock wifi;
 
     static void attach(Controls value) { controls = value; }
     static void detach(Controls value) { if (controls == value) controls = null; }
@@ -78,6 +82,7 @@ public final class PlaybackService extends Service {
         String action = intent.getAction();
         if (ACTION_STOP.equals(action)) {
             if (controls != null) controls.onClose();
+            releaseLocks();
             stopForeground(true);
             stopSelf();
             return START_NOT_STICKY;
@@ -145,6 +150,7 @@ public final class PlaybackService extends Service {
         if (Build.VERSION.SDK_INT >= 31) builder.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
 
         startForeground(NOTIFICATION_ID, builder.build());
+        if (playing) acquireLocks(); else releaseLocks();
 
         session.setMetadata(new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title.isEmpty() ? "Acervo" : title)
@@ -157,7 +163,32 @@ public final class PlaybackService extends Service {
                 .build());
     }
 
+    private void acquireLocks() {
+        if (wake == null) {
+            PowerManager manager = (PowerManager) getSystemService(POWER_SERVICE);
+            wake = manager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "acervo:playback");
+            wake.setReferenceCounted(false);
+        }
+        if (!wake.isHeld()) wake.acquire();
+        if (wifi == null) {
+            try {
+                WifiManager manager = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+                if (manager != null) {
+                    wifi = manager.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "acervo:wifi");
+                    wifi.setReferenceCounted(false);
+                }
+            } catch (SecurityException ignored) { }
+        }
+        if (wifi != null) try { if (!wifi.isHeld()) wifi.acquire(); } catch (SecurityException ignored) { }
+    }
+
+    private void releaseLocks() {
+        if (wake != null && wake.isHeld()) wake.release();
+        if (wifi != null && wifi.isHeld()) wifi.release();
+    }
+
     @Override public void onDestroy() {
+        releaseLocks();
         if (session != null) { session.setActive(false); session.release(); session = null; }
         super.onDestroy();
     }

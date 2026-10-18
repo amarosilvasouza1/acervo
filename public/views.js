@@ -5,9 +5,11 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.3.1';
+  var NEWS_VERSION = '1.3.2';
   var NEWS = [
-    ['Player em segundo plano', 'No APK 1.3.1 a música continua ao minimizar, com play/pause e próxima na notificação.'],
+    ['Tela desligada', 'No APK 1.3.2 a música continua com a tela apagada: o serviço segura CPU e Wi-Fi e mantém a notificação ativa.'],
+    ['Notificação no modo conectado', 'Play, pausa e próxima também aparecem quando o som vem do Acervo no PC, não só no modo independente.'],
+    ['Aleatório inteligente', 'A fila embaralhada intercala artistas e evita repetir o mesmo nome em sequência.'],
     ['Rádio que já baixa a próxima', 'No modo rádio do celular, a próxima faixa é baixada enquanto a atual toca e emenda sozinha.'],
     ['Conexão salva', 'O APK abre direto no último Acervo conectado, sem repetir o QR code.'],
     ['Continue de onde parou', 'O player lembra a última faixa e a posição; basta tocar em play.'],
@@ -33,7 +35,7 @@
     var unseen = true;
     try { unseen = localStorage.getItem('acervo:newsSeen') !== NEWS_VERSION; } catch (e) {}
     if (!unseen) return '';
-    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades 1.3.1</span><strong>Segundo plano, rádio com prefetch e conexão salva</strong><p>Notificação com controles, retomada da última faixa, timer de sono e buscas recentes.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
+    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades 1.3.2</span><strong>Tela desligada, notificação no modo conectado e aleatório inteligente</strong><p>O player segura CPU e Wi-Fi, os controles aparecem também no modo PC e o shuffle não repete artistas.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
   }
 
   function openNews() {
@@ -474,7 +476,7 @@
       case 'search-chip': doSearch(el.getAttribute('data-q')); return;
       case 'sort': S.sort = el.getAttribute('data-sort'); render(); return;
       case 'play-all': if (S.tracks.length) AC.play(S.tracks[0].id); return;
-      case 'shuffle-play': if (S.tracks.length) AC.play(shuffled(S.tracks)[0].id); return;
+      case 'shuffle-play': if (S.tracks.length) { AC.setShuffle(true); var pick = S.shuffleOrder.filter(function (id) { return !S.current || id !== S.current.id; })[0] || S.shuffleOrder[0]; AC.play(pick); } return;
       case 'clear-filter': S.filter = ''; render(); return;
       case 'whats-new': openNews(); return;
       case 'dismiss-news': try { localStorage.setItem('acervo:newsSeen', NEWS_VERSION); } catch (e) {} render(); return;

@@ -41,6 +41,7 @@
     queue: [],
     qi: 0,
     shuffle: false,
+    shuffleOrder: [],
     repeat: 'off',
     volume: 0.85,
     muted: false,
@@ -192,6 +193,53 @@
     return state.tracks;
   };
 
+  function buildShuffle(seedId, avoidId) {
+    var ids = state.tracks.map(function (t) { return t.id; });
+    if (!ids.length) return [];
+    var seed = seedId && ids.indexOf(seedId) >= 0 ? seedId : null;
+    if (!seed) {
+      do { seed = ids[Math.floor(Math.random() * ids.length)]; }
+      while (avoidId && ids.length > 1 && seed === avoidId);
+    }
+    var rest = ids.filter(function (id) { return id !== seed; });
+    for (var i = rest.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var swap = rest[i]; rest[i] = rest[j]; rest[j] = swap;
+    }
+    var artistOf = function (id) { var t = AC.trackById(id); return t ? (t.artist || '').toLowerCase() : ''; };
+    var groups = {};
+    rest.forEach(function (id) {
+      var key = artistOf(id) || '?';
+      (groups[key] = groups[key] || []).push(id);
+    });
+    var keys = Object.keys(groups);
+    var previous = artistOf(seed) || '?';
+    var ordered = [];
+    while (ordered.length < rest.length) {
+      var candidates = keys.filter(function (key) { return groups[key].length && key !== previous; });
+      if (!candidates.length) candidates = keys.filter(function (key) { return groups[key].length; });
+      candidates.sort(function (a, b) { return groups[b].length - groups[a].length; });
+      var pick = candidates[0];
+      ordered.push(groups[pick].shift());
+      previous = pick;
+    }
+    return [seed].concat(ordered);
+  }
+
+  AC.setShuffle = function (enabled) {
+    state.shuffle = !!enabled;
+    var btn = $('btn-shuffle');
+    if (btn) btn.classList.toggle('is-on', state.shuffle);
+    if (state.shuffle) {
+      state.shuffleOrder = buildShuffle(state.current ? state.current.id : null);
+      state.queue = state.shuffleOrder.slice();
+      state.qi = state.current ? state.queue.indexOf(state.current.id) : 0;
+    } else {
+      state.queue = state.tracks.map(function (t) { return t.id; });
+      state.qi = state.current ? state.queue.indexOf(state.current.id) : 0;
+    }
+  };
+
   AC.trackById = function (id) {
     for (var i = 0; i < state.tracks.length; i++) {
       if (state.tracks[i].id === id) return state.tracks[i];
@@ -202,6 +250,14 @@
   /* ---------- audio ---------- */
   var audio = $('audio');
   var player = $('player');
+
+  function notifyAndroid() {
+    var bridge = window.AcervoAndroid;
+    if (!bridge || typeof bridge.nowPlaying !== 'function') return;
+    try {
+      if (state.current) bridge.nowPlaying(state.current.title || '', state.current.artist || '', !!state.playing);
+    } catch (e) {}
+  }
 
   function setPlayIcon() {
     var btn = $('btn-play');
@@ -214,6 +270,7 @@
     if ('mediaSession' in navigator) {
       navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
     }
+    notifyAndroid();
   }
 
   function paintPlayer() {
@@ -244,6 +301,10 @@
       state.radio = true;
       state.queue = [id];
       state.qi = 0;
+    } else if (state.shuffle) {
+      if (state.shuffleOrder.indexOf(id) === -1) state.shuffleOrder = buildShuffle(id);
+      state.queue = state.shuffleOrder.slice();
+      state.qi = state.queue.indexOf(id);
     } else if (state.queue.indexOf(id) === -1 || state.queue.length === 0) {
       state.queue = state.tracks.map(function (t) { return t.id; });
       state.qi = state.queue.indexOf(id);
@@ -346,9 +407,6 @@
       return;
     }
     var nextIndex = state.qi + 1;
-    if (state.shuffle && state.queue.length > 1) {
-      do { nextIndex = Math.floor(Math.random() * state.queue.length); } while (nextIndex === state.qi);
-    }
     if (nextIndex >= state.queue.length) {
       if (state.radio && typeof AC.extendRadio === 'function') {
         AC.extendRadio().then(function (added) {
@@ -361,6 +419,19 @@
             setPlayIcon();
           }
         });
+        return;
+      }
+      if (state.shuffle) {
+        if (state.repeat === 'all') {
+          state.shuffleOrder = buildShuffle(null, state.current ? state.current.id : null);
+          state.queue = state.shuffleOrder.slice();
+          state.qi = 0;
+          AC.play(state.queue[0], { keepRadio: true });
+        } else {
+          state.playing = false;
+          audio.pause();
+          setPlayIcon();
+        }
         return;
       }
       if (state.repeat === 'all') nextIndex = 0;
@@ -708,10 +779,8 @@
     prev: function () { AC.prev(); },
     shuffle: function () {
       if (AC.syncCommand && AC.syncCommand('shuffle', { shuffle: !state.shuffle })) return;
-      state.shuffle = !state.shuffle;
-      var btn = $('btn-shuffle');
-      if (btn) btn.classList.toggle('is-on', state.shuffle);
-      AC.toast(state.shuffle ? 'Aleatório ativado' : 'Aleatório desativado');
+      AC.setShuffle(!state.shuffle);
+      AC.toast(state.shuffle ? 'Aleatório inteligente ativado' : 'Aleatório desativado');
       if (AC.notifyPlayback) AC.notifyPlayback(true);
     },
     repeat: function () {

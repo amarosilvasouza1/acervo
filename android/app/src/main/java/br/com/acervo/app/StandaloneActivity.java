@@ -75,7 +75,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private AudioManager audio;
     private AudioFocusRequest audioFocus;
     private int mode, playRequest;
-    private boolean destroyed, preparing, seeking, foreground, playRecorded;
+    private boolean destroyed, preparing, seeking, foreground, playRecorded, askedNotifications;
     private List<MobileSource.Song> results = new ArrayList<>();
     private List<MobileSource.Song> searchResults = new ArrayList<>();
     private List<MobileSource.Song> radioResults = new ArrayList<>();
@@ -649,6 +649,11 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             playRecorded = true;
             String id = playingTrack.id;
             work.execute(() -> { try { library.recordPlayed(id); } catch (Exception failure) { post(() -> toast(message(failure))); } });
+        }
+        if (!askedNotifications && Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            askedNotifications = true;
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
         }
         PlaybackService.update(this, playingTrack == null ? "Acervo" : playingTrack.title,
                 playingTrack == null ? "" : playingTrack.artist, true);

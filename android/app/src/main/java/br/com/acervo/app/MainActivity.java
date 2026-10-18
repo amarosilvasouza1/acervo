@@ -1,13 +1,16 @@
 package br.com.acervo.app;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.pm.PackageManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -16,6 +19,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
@@ -34,7 +38,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 /** Connects to a paired Acervo server, hosted locally or over HTTPS. */
-public final class MainActivity extends Activity {
+public final class MainActivity extends Activity implements PlaybackService.Controls {
     private static final int SCAN_REQUEST = 20;
     private static final int BG = Color.rgb(18, 18, 18);
     private static final int CARD = Color.rgb(36, 36, 36);
@@ -50,6 +54,7 @@ public final class MainActivity extends Activity {
     private String retryUrl;
     private boolean failed;
     private boolean autoOpened;
+    private boolean askedNotifications;
     private Runnable loadTimeout;
 
     @Override public void onCreate(Bundle state) {
@@ -57,6 +62,10 @@ public final class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
         preferences = getSharedPreferences("acervo_connection", MODE_PRIVATE);
+        PlaybackService.attach(this);
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
+        }
         showHome(null);
     }
 
@@ -226,7 +235,8 @@ public final class MainActivity extends Activity {
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.3.1 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.3.2 Mobile");
+        webView.addJavascriptInterface(new Bridge(), "AcervoAndroid");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setWebChromeClient(new WebChromeClient());
@@ -375,20 +385,46 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
-        if (webView != null) webView.onPause();
         CookieManager.getInstance().flush();
         super.onPause();
     }
 
     @Override protected void onResume() {
         super.onResume();
+        PlaybackService.attach(this);
         if (webView != null) webView.onResume();
     }
 
     @Override protected void onDestroy() {
+        PlaybackService.detach(this);
+        PlaybackService.hide(this);
         cancelTimeout();
         disposeWebView();
         super.onDestroy();
+    }
+
+    @Override public void onToggle() { js("AC.toggle()"); }
+    @Override public void onNext() { js("AC.next(false)"); }
+    @Override public void onPrevious() { js("AC.prev()"); }
+    @Override public void onClose() { js("if (AC.state.playing) AC.toggle();"); }
+
+    private void js(String code) {
+        runOnUiThread(() -> {
+            if (webView != null) webView.evaluateJavascript(code, null);
+        });
+    }
+
+    private final class Bridge {
+        @JavascriptInterface public void nowPlaying(String title, String artist, boolean playing) {
+            runOnUiThread(() -> {
+                if (playing && !askedNotifications && Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    askedNotifications = true;
+                    requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
+                }
+                PlaybackService.update(MainActivity.this, title, artist, playing);
+            });
+        }
     }
 
     private void disposeWebView() {
