@@ -95,6 +95,15 @@ test('switching artist rejects a stale profile and URL-encodes the selected name
   assert.doesNotMatch(h.artist(), /Perfil anterior/);
 });
 
+test('opening an artist from a track sheet closes the modal before navigating', () => {
+  const h = setup(), actions = [];
+  h.AC.closeModals = () => actions.push('close');
+  h.AC.go = view => { actions.push(view); h.AC.state.view = view; };
+  h.AC.playerActions['open-artist'](element({ 'data-artist': 'Artista do sheet' }));
+  assert.deepEqual(actions, ['close', 'artist']);
+  assert.equal(h.AC.state.artistName, 'Artista do sheet');
+});
+
 test('load failures show escaped feedback and retry performs a new request', async () => {
   const h = setup();
   h.setApi(async () => { throw new Error('Fonte <indisponível>'); });
@@ -213,4 +222,35 @@ test('library updates preserve the previous callback and refresh only when the c
   assert.equal(h.requests.length, 3);
   assert.equal(previousCalls, 3);
   assert.match(h.feed(), /Catálogo 3/);
+});
+
+test('listening changes received through library refresh invalidate recent and recommended feeds', async () => {
+  const h = setup();
+  h.AC.state.tracks = [{ id: 'one', title: 'Uma faixa', artist: 'Artista', lastPlayedAt: '2026-10-18T10:00:00Z', plays: 1 }];
+  h.AC.onLibraryLoaded();
+  h.setApi(async () => ({ items: [song({ title: `Seleção ${h.requests.length}` })] }));
+  h.AC.state.exploreSection = 'recent';
+  await h.AC.mountExplore('recent');
+  h.AC.state.exploreSection = 'recommended';
+  await h.AC.mountExplore('recommended');
+  assert.equal(h.requests.length, 2);
+
+  // Another device changes only listening metadata; no local onListen callback runs.
+  h.AC.state.tracks[0].lastPlayedAt = '2026-10-18T11:00:00Z';
+  h.AC.state.tracks[0].plays = 2;
+  h.AC.onLibraryLoaded();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(h.requests.length, 3);
+  assert.equal(h.requests[2].path, '/api/explore?section=recommended');
+  assert.match(h.feed(), /Seleção 3/);
+
+  h.AC.state.exploreSection = 'recent';
+  await h.AC.mountExplore('recent');
+  assert.equal(h.requests.length, 4, 'the cached recent feed was also invalidated');
+  assert.equal(h.requests[3].path, '/api/explore?section=recent');
+  assert.match(h.feed(), /Seleção 4/);
+
+  h.AC.onLibraryLoaded();
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.equal(h.requests.length, 4, 'unchanged listening metadata keeps the current cache');
 });

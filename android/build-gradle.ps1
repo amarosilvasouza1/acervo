@@ -4,7 +4,8 @@ param(
     [string]$SdkRoot,
     [string]$GradleHome,
     [string]$OutputDirectory,
-    [switch]$DependenciesOnly
+    [switch]$DependenciesOnly,
+    [switch]$Offline
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -40,13 +41,15 @@ try {
     $env:GRADLE_USER_HOME = Join-Path ([System.IO.Path]::GetTempPath()) 'acervo-gradle-cache'
     $env:PATH = (Join-Path $JavaHome 'bin') + ';' + $oldPath
     if (Test-Path -LiteralPath (Join-Path $cache 'maven')) { $env:ACERVO_MAVEN_CACHE = Join-Path $cache 'maven' }
+    $gradleArguments = @('-p', $stage, '--no-daemon', '--console=plain')
+    if ($Offline) { $gradleArguments += '--offline' }
     if ($DependenciesOnly) {
-        & $gradle -p $stage --no-daemon --console=plain :app:writeExtractorClasspath
+        & $gradle @gradleArguments :app:writeExtractorClasspath
         if ($LASTEXITCODE -ne 0) { throw 'Falha ao resolver dependências Android.' }
         Write-Host ('CLASSPATH_FILE=' + (Join-Path $stage 'app/build/extractor-classpath.txt'))
         return
     }
-    & $gradle -p $stage --no-daemon --console=plain :app:assembleRelease :app:writeExtractorClasspath
+    & $gradle @gradleArguments :app:assembleRelease :app:writeExtractorClasspath
     if ($LASTEXITCODE -ne 0) { throw 'Falha na compilação Android.' }
     [xml]$manifest = Get-Content -LiteralPath (Join-Path $stage 'app/src/main/AndroidManifest.xml') -Raw
     $version = $manifest.manifest.GetAttribute('versionName', 'http://schemas.android.com/apk/res/android')

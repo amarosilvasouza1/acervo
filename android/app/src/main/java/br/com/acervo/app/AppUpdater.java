@@ -67,14 +67,14 @@ public final class AppUpdater {
                 final Update update;
                 if (configuredOriginOrNull != null && !configuredOriginOrNull.trim().isEmpty()) {
                     String origin = PairingLink.parse(configuredOriginOrNull).origin;
-                    JSONObject metadata = new JSONObject(readText(new URL(origin + "/api/app/version"), origin, false, 2 * 1024 * 1024, cancelled));
+                    JSONObject metadata = new JSONObject(readText(activity, new URL(origin + "/api/app/version"), origin, false, 2 * 1024 * 1024, cancelled));
                     update = serverUpdate(metadata, origin);
                 } else {
                     if (!UpdateSource.configured()) {
                         message(activity, "Atualizacao", "Atualizações pelo GitHub serão ativadas quando o repositório for configurado. Você também pode atualizar pelo servidor Acervo conectado.");
                         return;
                     }
-                    JSONObject metadata = new JSONObject(readText(new URL(UpdateSource.latestReleaseApi(UpdateSource.GITHUB_REPOSITORY)), null, true, 2 * 1024 * 1024, cancelled));
+                    JSONObject metadata = new JSONObject(readText(activity, new URL(UpdateSource.latestReleaseApi(UpdateSource.GITHUB_REPOSITORY)), null, true, 2 * 1024 * 1024, cancelled));
                     update = githubUpdate(metadata);
                 }
                 if (update.versionCode > 0 && update.versionCode <= versionCode(installed)) {
@@ -156,7 +156,7 @@ public final class AppUpdater {
             try {
                 String expectedHash = update.sha256;
                 if (expectedHash.isEmpty() && update.hashUrl != null) {
-                    String checksum = readText(update.hashUrl, update.origin, update.github, 16384, cancelled).trim();
+                    String checksum = readText(activity, update.hashUrl, update.origin, update.github, 16384, cancelled).trim();
                     expectedHash = checksum.split("\\s+", 2)[0].toLowerCase(Locale.US);
                     if (!validHash(expectedHash)) throw new IOException("O arquivo de checksum e invalido.");
                 }
@@ -164,7 +164,7 @@ public final class AppUpdater {
                 if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("Sem espaco para baixar a atualizacao.");
                 partial = File.createTempFile("download-", ".part", directory);
                 MessageDigest digest = MessageDigest.getInstance("SHA-256");
-                HttpURLConnection connection = open(update.apkUrl, update.origin, update.github);
+                HttpURLConnection connection = open(activity, update.apkUrl, update.origin, update.github);
                 try {
                     long length = connection.getContentLengthLong();
                     if (length > MAX_APK_BYTES) throw new IOException("O APK excede o limite de 100 MB.");
@@ -266,8 +266,8 @@ public final class AppUpdater {
         }
     }
 
-    private static String readText(URL url, String origin, boolean github, int limit, AtomicBoolean cancelled) throws Exception {
-        HttpURLConnection connection = open(url, origin, github);
+    private static String readText(Activity activity, URL url, String origin, boolean github, int limit, AtomicBoolean cancelled) throws Exception {
+        HttpURLConnection connection = open(activity, url, origin, github);
         try {
             if (connection.getContentLengthLong() > limit) throw new IOException("Resposta de atualizacao muito grande.");
             try (InputStream input = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
@@ -285,11 +285,11 @@ public final class AppUpdater {
         } finally { connection.disconnect(); }
     }
 
-    private static HttpURLConnection open(URL initial, String origin, boolean github) throws Exception {
+    private static HttpURLConnection open(Activity activity, URL initial, String origin, boolean github) throws Exception {
         URL url = initial;
         for (int redirect = 0; redirect <= 5; redirect++) {
             if (!allowedUrl(url.toURI(), origin, github)) throw new IOException("O endereco da atualizacao nao e permitido.");
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            HttpURLConnection connection = github ? (HttpURLConnection) url.openConnection() : SecureTransport.open(activity, url, origin);
             connection.setConnectTimeout(15000);
             connection.setReadTimeout(20000);
             connection.setInstanceFollowRedirects(false);
@@ -306,7 +306,7 @@ public final class AppUpdater {
             if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
                 String location = connection.getHeaderField("Location");
                 connection.disconnect();
-                if (location == null || redirect == 5) throw new IOException("Redirecionamento de atualizacao invalido.");
+                if (!github || location == null || redirect == 5) throw new IOException("Redirecionamento de atualizacao invalido.");
                 url = new URL(url, location);
                 continue;
             }
@@ -327,7 +327,7 @@ public final class AppUpdater {
 
     static boolean allowedUrl(URI uri, String origin, boolean github, String repository) {
         if (uri == null || uri.getHost() == null || uri.getRawUserInfo() != null || uri.getRawFragment() != null) return false;
-        if (!github) return origin != null && PairingLink.isSameOrigin(uri.toString(), origin);
+        if (!github) return "https".equalsIgnoreCase(uri.getScheme()) && origin != null && PairingLink.isSameOrigin(uri.toString(), origin);
         return UpdateSource.allowedGitHubUri(uri, repository);
     }
 

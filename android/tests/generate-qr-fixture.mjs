@@ -8,6 +8,7 @@ const folder = resolve(process.argv[2] || 'android/tests/generated');
 await mkdir(folder, { recursive: true });
 const manager = createConnectManager({
   port: 4313,
+  secureTransport: { port: 4314, pin: 'ab'.repeat(32) },
   randomToken: () => '4O0jMsz_Bs9YD2xHhQ3rY8kEbP6NfvZWaLG7a-CuTqI',
   networkInterfaces: () => ({ WiFi: [{ address: '192.168.15.8', internal: false, family: 'IPv4' }] }),
 });

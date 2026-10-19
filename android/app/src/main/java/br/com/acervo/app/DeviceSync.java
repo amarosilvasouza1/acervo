@@ -183,7 +183,7 @@ public final class DeviceSync {
         void copyFromPc(String id, JSONObject track, String stage) throws Exception {
             URL target = new URL(origin + "/api/stream/" + id);
             if (!PairingLink.isSameOrigin(target.toString(), origin)) throw new IOException("Endereco de audio invalido.");
-            HttpURLConnection current = (HttpURLConnection) target.openConnection();
+            HttpURLConnection current = SecureTransport.open(activity, target, origin);
             connection = current;
             File temp = null;
             try {
@@ -231,7 +231,7 @@ public final class DeviceSync {
             if (!"/api/library".equals(endpoint) && !"/api/import".equals(endpoint)) throw new IOException("Operacao de sincronizacao invalida.");
             URL target = new URL(origin + endpoint);
             if (!PairingLink.isSameOrigin(target.toString(), origin)) throw new IOException("Endereco de sincronizacao invalido.");
-            HttpURLConnection current = (HttpURLConnection) target.openConnection();
+            HttpURLConnection current = SecureTransport.open(activity, target, origin);
             connection = current;
             try {
                 current.setInstanceFollowRedirects(false);

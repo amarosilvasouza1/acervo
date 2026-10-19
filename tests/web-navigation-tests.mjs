@@ -110,6 +110,23 @@ test('successful playlist import opens the populated playlist instead of throwin
   assert.deepEqual(h.calls.find(call => call.url === '/api/playlists/import').body, { url: 'https://youtube.com/playlist?list=fixture' });
 });
 
+test('discovery shortcuts route through the shared exploration view and mount the selected tab', () => {
+  const h = browser(); const mounted = []; let left = 0;
+  h.AC.exploreView = section => '<h1>Explore ' + section + '</h1>';
+  h.AC.mountExplore = section => mounted.push(section);
+  h.AC.leaveExplore = () => { left++; };
+  for (const section of ['recommended', 'releases', 'recent']) {
+    h.click(h.action('nav', { 'data-view': section }));
+    assert.equal(h.AC.state.view, 'explore');
+    assert.equal(h.AC.state.exploreSection, section);
+    assert.match(h.getNode('view').innerHTML, new RegExp('Explore ' + section));
+    assert.equal(mounted.at(-1), section);
+    assert.equal(h.navigation.find(node => node.getAttribute('data-view') === 'recommended').getAttribute('aria-current'), 'page');
+  }
+  h.AC.go('library');
+  assert.equal(left, 1, 'Leaving exploration cancels its active request');
+});
+
 test('Space leaves native controls and editable fields to browser activation, and still toggles playback on the page', () => {
   const h = browser(); let toggles = 0; h.AC.toggle = () => { toggles++; };
   for (const tag of ['BUTTON', 'A', 'INPUT', 'TEXTAREA', 'SELECT']) {

@@ -215,6 +215,7 @@
     if (!name) return;
     AC.leaveExplore();
     S.artistName = name;
+    if (typeof AC.closeModals === 'function') AC.closeModals();
     AC.go('artist');
   };
   AC.playerActions['open-artist'] = function (element) { AC.openArtist(element.getAttribute('data-artist')); };
@@ -253,7 +254,7 @@
   var previousLibraryLoaded = AC.onLibraryLoaded;
   AC.onLibraryLoaded = function () {
     if (typeof previousLibraryLoaded === 'function') previousLibraryLoaded();
-    var signature = JSON.stringify((S.tracks || []).map(function (track) { return [track.id, track.title, track.artist, track.hasCover]; }));
+    var signature = JSON.stringify((S.tracks || []).map(function (track) { return [track.id, track.title, track.artist, track.hasCover, track.lastPlayedAt, track.plays]; }));
     if (signature !== librarySignature) { librarySignature = signature; AC.invalidateExplore(); }
   };
 })();

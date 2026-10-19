@@ -17,7 +17,8 @@ public final class AppUpdaterPolicyTest {
         url("https://music.example:443/downloads/acervo.apk", "https://music.example", false, true);
         url("https://other.example/acervo.apk", "https://music.example", false, false);
         url("http://music.example/acervo.apk", "https://music.example", false, false);
-        url("http://192.168.1.8:4310/downloads/acervo.apk", "http://192.168.1.8:4310", false, true);
+        url("http://192.168.1.8:4310/downloads/acervo.apk", "http://192.168.1.8:4310", false, false);
+        url("https://192.168.1.8:4311/downloads/acervo.apk", "https://192.168.1.8:4311", false, true);
         url("http://192.168.1.8:4311/downloads/acervo.apk", "http://192.168.1.8:4310", false, false);
         url("http://8.8.8.8/acervo.apk", "http://8.8.8.8", false, false);
         url("https://person:secret@music.example/acervo.apk", "https://music.example", false, false);

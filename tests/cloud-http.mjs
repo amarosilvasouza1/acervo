@@ -195,7 +195,9 @@ try {
   const metadata = await json('/api/app/version');
   assert.ok([200, 404].includes(metadata.status));
   if (metadata.status === 200) {
-    assert.equal(metadata.data.versionCode, 3); assert.equal(metadata.data.versionName, '1.2.0');
+    const manifest = await fs.readFile(new URL('../android/app/src/main/AndroidManifest.xml', import.meta.url), 'utf8');
+    assert.equal(metadata.data.versionCode, Number(manifest.match(/android:versionCode="(\d+)"/)[1]));
+    assert.equal(metadata.data.versionName, manifest.match(/android:versionName="([^"]+)"/)[1]);
     assert.match(metadata.data.sha256, /^[a-f0-9]{64}$/);
     const apk = await raw(metadata.data.downloadUrl);
     assert.equal(apk.status, 200); assert.equal(crypto.createHash('sha256').update(apk.body).digest('hex'), metadata.data.sha256);

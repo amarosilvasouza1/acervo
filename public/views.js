@@ -5,8 +5,11 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.3.6';
+  var NEWS_VERSION = '1.4.0';
   var NEWS = [
+    ['APK com o mesmo visual', 'Início, busca, biblioteca e rádio em abas inferiores, mini player e player expandido. As músicas e capas salvas continuam disponíveis offline.'],
+    ['Conexão criptografada', 'O QR code do PC agora leva a identidade do computador. O APK verifica essa chave para proteger biblioteca, controles, rádio e áudio durante a conexão.'],
+    ['Confira a identidade', 'Abra Proteção no APK e compare o código com o QR no PC. Conexões locais antigas por HTTP precisam de um novo pareamento seguro.'],
     ['Web em tela inteira', 'Navegação mais simples, atalhos para ouvir e biblioteca em lista. A versão Web aproveita a tela do seu navegador.'],
     ['Tela desligada', 'No APK 1.3.2 a música continua com a tela apagada: o serviço segura CPU e Wi-Fi e mantém a notificação ativa.'],
     ['Notificação no modo conectado', 'Play, pausa e próxima também aparecem quando o som vem do Acervo no PC, não só no modo independente.'],
@@ -142,7 +145,7 @@
     return '<div class="view home-view">' + filters +
       '<header class="hero compact"><h1>' + greeting + '</h1><button class="link" data-action="whats-new">Novidades ' + NEWS_VERSION + '</button></header>' +
       (recent.length ? '<div class="quick-shortcuts">' + shortcuts + '</div>' : emptyHome()) +
-      (listened.length ? '<section class="section"><div class="section-head"><h2>Ouvidas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid track-rail">' + listened.slice(0, 8).map(cardHtml).join('') + '</div></section>' : '') +
+      (listened.length ? '<section class="section"><div class="section-head"><h2>Ouvidas recentemente</h2><button class="link" data-action="nav" data-view="recent">Mostrar tudo</button></div><div class="grid track-rail">' + listened.slice(0, 8).map(cardHtml).join('') + '</div></section>' : '') +
       (recent.length ? '<section class="section"><div class="section-head"><h2>Adicionadas recentemente</h2><button class="link" data-action="nav" data-view="library">Mostrar tudo</button></div><div class="grid track-rail">' + recent.map(cardHtml).join('') + '</div></section>' : '') +
       '<section class="section"><div class="section-head"><h2>Descubra algo novo</h2></div><div class="discovery-shortcuts"><button data-action="nav" data-view="recommended">' + icon('sparkles', 28) + '<span><b>Feitas para você</b><small>Recomendadas a partir do seu som</small></span></button><button data-action="nav" data-view="releases">' + icon('wave', 28) + '<span><b>Novos lançamentos</b><small>Álbuns e singles com data de lançamento</small></span></button></div></section>' + radio + '</div>';
   }

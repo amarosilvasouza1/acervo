@@ -1,4 +1,5 @@
 import http from 'node:http';
+import https from 'node:https';
 import { readFile, writeFile, mkdir, stat, unlink, rename, readdir } from 'node:fs/promises';
 import { createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -12,6 +13,7 @@ import * as Playlists from './lib/playlists.js';
 import { runRadio, validateRadioInput } from './lib/radio.js';
 import { createConnectManager } from './lib/connect.js';
 import { createCatalogService } from './lib/catalog.js';
+import { loadTlsIdentity } from './lib/tls.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -20,13 +22,19 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 10, versionName: '1.3.6' };
+const ANDROID_VERSION = { versionCode: 11, versionName: '1.4.0' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
 const MODE = process.env.ACERVO_MODE || 'local';
 if (!['local', 'cloud'].includes(MODE)) throw new Error('ACERVO_MODE deve ser local ou cloud.');
+const SECURE_PORT = Number(process.env.ACERVO_HTTPS_PORT || PORT + 1);
+if (MODE === 'local' && (!Number.isInteger(SECURE_PORT) || SECURE_PORT < 1 || SECURE_PORT > 65535 || SECURE_PORT === PORT)) {
+  throw new Error('ACERVO_HTTPS_PORT deve ser uma porta válida diferente da porta HTTP.');
+}
+const tlsIdentity = MODE === 'local' ? await loadTlsIdentity({ directory: path.join(DATA, 'identity') }) : null;
 const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: MODE,
+  ...(tlsIdentity ? { secureTransport: { port: SECURE_PORT, pin: tlsIdentity.spkiPin } } : {}),
   publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
   trustTailscale: process.env.ACERVO_TRUST_TAILSCALE === '1',
   stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
@@ -418,7 +426,7 @@ async function serveStatic(req, res, pathname) {
   }
 }
 
-const server = http.createServer(async function (req, res) {
+async function handleRequest(req, res) {
   const url = new URL(req.url, 'http://127.0.0.1');
   const pathname = url.pathname;
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -645,7 +653,17 @@ const server = http.createServer(async function (req, res) {
     if (res.headersSent) return res.end();
     sendJson(res, err.statusCode || 500, { error: String(err.message || err) });
   }
-});
+}
+
+const server = http.createServer(handleRequest);
+if (tlsIdentity) {
+  const secureServer = https.createServer({ key: tlsIdentity.key, cert: tlsIdentity.cert, minVersion: 'TLSv1.2' }, handleRequest);
+  await new Promise((resolve, reject) => {
+    secureServer.once('error', reject);
+    secureServer.listen(SECURE_PORT, HOST, resolve);
+  });
+  console.log('Conexão criptografada do APK disponível na porta ' + SECURE_PORT + '. Pareie pelo QR code no computador.');
+}
 
 server.listen(PORT, HOST, function () {
   console.log(MODE === 'cloud' ? 'Acervo na nuvem: ' + process.env.ACERVO_PUBLIC_ORIGIN : 'Acervo rodando em http://127.0.0.1:' + PORT);

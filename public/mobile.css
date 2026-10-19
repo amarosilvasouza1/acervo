@@ -1,5 +1,9 @@
 /* Device connection and phone layouts share the existing player and library. */
 .mobile-nav { display: none; }
+.connect-security { padding: 16px; margin: 16px 0; background: #1b2520; border-radius: 8px; font-size: 12px; }
+.connect-security strong { color: var(--accent); }
+.connect-security p { color: var(--muted); line-height: 1.6; }
+.connect-security code { display: block; line-height: 1.9; font-size: 11px; overflow-wrap: anywhere; color: #fff; }
 .player-cover { padding: 0; }
 .player-meta { padding: 0; text-align: left; }
 .player-title, .player-artist { display: block; }

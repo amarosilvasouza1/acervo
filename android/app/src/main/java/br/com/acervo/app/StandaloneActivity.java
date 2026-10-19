@@ -3,6 +3,7 @@ package br.com.acervo.app;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -17,6 +18,8 @@ import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -25,19 +28,26 @@ import android.os.PowerManager;
 import android.util.LruCache;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.SeekBar;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 import java.io.InputStream;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.net.HttpURLConnection;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +63,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private static final int CARD = Color.rgb(31, 31, 31);
     private static final int GREEN = Color.rgb(30, 215, 96);
     private static final int MUTED = Color.rgb(179, 179, 179);
+    private enum Mode { HOME, SEARCH, LIBRARY, RADIO, ARTIST }
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newFixedThreadPool(3);
     private final ExecutorService covers = Executors.newFixedThreadPool(2);
@@ -66,20 +77,34 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     };
     private MobileLibrary library;
     private LinearLayout content, searchRow, playerPanel;
+    private final Map<Mode, LinearLayout> navigation = new LinkedHashMap<>();
+    private final Map<Mode, ImageView> navigationIcons = new LinkedHashMap<>();
+    private final Map<Mode, TextView> navigationLabels = new LinkedHashMap<>();
+    private ScrollView pageScroll;
+    private ImageView playerCover;
+    private ProgressBar miniProgress;
+    private Dialog expandedPlayer;
+    private TextView expandedTitle, expandedArtist;
+    private ImageView expandedCover;
+    private Button expandedPlay;
     private TextView status, playerTitle, playerArtist, elapsed, remaining;
     private EditText query;
-    private Button searchButton, libraryTab, searchTab, radioTab, playButton;
+    private Button searchButton, playButton;
     private SeekBar seek;
     private MediaPlayer player;
     private MobileLibrary.Track playingTrack;
     private AudioManager audio;
     private AudioFocusRequest audioFocus;
-    private int mode, playRequest;
+    private Mode mode = Mode.HOME;
+    private Mode artistOrigin = Mode.HOME;
+    private String artistName = "";
+    private int playRequest;
     private boolean destroyed, preparing, seeking, foreground, playRecorded, askedNotifications;
     private List<MobileSource.Song> results = new ArrayList<>();
     private List<MobileSource.Song> searchResults = new ArrayList<>();
     private List<MobileSource.Song> radioResults = new ArrayList<>();
     private List<MobileSource.Song> radioQueue = new ArrayList<>();
+    private List<MobileLibrary.Track> localQueue = new ArrayList<>();
     private int radioIndex = -1;
     private boolean radioPlayback, radioAutoPlay;
     private String radioSeed = "";
@@ -112,7 +137,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY), Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(noisy, new IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY));
         buildScreen();
-        select(0);
+        select(Mode.HOME);
         main.post(ticker);
     }
 
@@ -120,40 +145,16 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         LinearLayout root = column();
         root.setBackgroundColor(BG);
         LinearLayout header = row();
-        header.setPadding(dp(20), dp(16), dp(12), dp(8));
-        TextView title = text("acervo", 28, Color.WHITE, true);
+        header.setPadding(dp(20), dp(8), dp(12), dp(8));
+        TextView title = text("acervo", 25, Color.WHITE, true);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        Button update = button("Atualizar", false);
-        update.setContentDescription("Atualizar aplicativo");
-        update.setOnClickListener(v -> AppUpdater.check(this, null));
+        Button update = iconButton("update", "Atualizar aplicativo", false);
+        update.setOnClickListener(v -> AppUpdater.check(this, getSharedPreferences("acervo_connection", MODE_PRIVATE).getString("server_origin", null)));
         header.addView(update);
-        Button connect = button("Conexões", false);
+        Button connect = iconButton("connect", "Conexões com o computador", false);
         connect.setOnClickListener(v -> finish());
         header.addView(connect);
         root.addView(header);
-        TextView independent = text("NO SEU CELULAR · SEM PRECISAR DO PC", 10, GREEN, true);
-        independent.setPadding(dp(20), 0, dp(20), dp(18));
-        root.addView(independent);
-        LinearLayout tabs = row();
-        tabs.setPadding(dp(16), 0, dp(16), dp(12));
-        libraryTab = button("Biblioteca", false);
-        searchTab = button("Buscar", false);
-        radioTab = button("Rádio", false);
-        libraryTab.setOnClickListener(v -> select(0));
-        searchTab.setOnClickListener(v -> select(1));
-        radioTab.setOnClickListener(v -> {
-            select(2);
-            if (results.isEmpty() || radioSeed.isEmpty()) {
-                MobileLibrary.Track recent = library.recent();
-                if (recent != null) startRadio(recent.title, recent.artist, recent.id);
-            }
-        });
-        for (Button tab : new Button[] { libraryTab, searchTab, radioTab }) {
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(46), 1);
-            params.setMargins(dp(3), 0, dp(3), 0);
-            tabs.addView(tab, params);
-        }
-        root.addView(tabs);
         searchRow = row();
         searchRow.setPadding(dp(20), dp(4), dp(20), dp(12));
         query = new EditText(this);
@@ -180,105 +181,390 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         status.setPadding(dp(20), 0, dp(20), dp(8));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
-        ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
+        pageScroll = new ScrollView(this);
+        pageScroll.setFillViewport(true);
+        pageScroll.setClipToPadding(false);
         content = column();
-        content.setPadding(dp(20), dp(8), dp(20), dp(24));
-        scroll.addView(content);
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        content.setPadding(dp(20), dp(8), dp(20), dp(28));
+        pageScroll.addView(content);
+        root.addView(pageScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         buildPlayer(root);
+        buildNavigation(root);
         setContentView(root);
         ScreenInsets.apply(this, root);
     }
 
-    private void select(int nextMode) {
+    private void buildNavigation(LinearLayout root) {
+        LinearLayout tabs = row();
+        tabs.setBackgroundColor(BG);
+        tabs.setPadding(dp(4), dp(5), dp(4), dp(5));
+        Mode[] modes = { Mode.HOME, Mode.SEARCH, Mode.LIBRARY, Mode.RADIO };
+        String[] labels = { "Início", "Buscar", "Biblioteca", "Rádio" };
+        String[] icons = { "home", "search", "library", "radio" };
+        for (int i = 0; i < modes.length; i++) {
+            final Mode target = modes[i];
+            LinearLayout tab = column();
+            tab.setGravity(Gravity.CENTER);
+            tab.setBackground(rounded(BG, 8));
+            tab.setContentDescription(labels[i]);
+            tab.setFocusable(true);
+            ImageView icon = new ImageView(this);
+            icon.setImageDrawable(new AcervoIcon(icons[i], MUTED));
+            tab.addView(icon, new LinearLayout.LayoutParams(dp(23), dp(23)));
+            TextView label = text(labels[i], 10, MUTED, true);
+            LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
+            labelParams.topMargin = dp(5);
+            tab.addView(label, labelParams);
+            tab.setOnClickListener(v -> {
+                select(target);
+                if (target == Mode.RADIO && radioSeed.isEmpty()) {
+                    MobileLibrary.Track recent = library.recent();
+                    if (recent != null) startRadio(recent.title, recent.artist, recent.id);
+                }
+            });
+            tabs.addView(tab, new LinearLayout.LayoutParams(0, dp(57), 1));
+            navigation.put(target, tab);
+            navigationIcons.put(target, icon);
+            navigationLabels.put(target, label);
+        }
+        root.addView(tabs);
+    }
+
+    private void select(Mode nextMode) {
         if (mode != nextMode) {
             searches.incrementAndGet();
             searchButton.setEnabled(true);
+            pageScroll.smoothScrollTo(0, 0);
         }
         mode = nextMode;
-        results = mode == 2 ? radioResults : searchResults;
-        libraryTab.setBackground(rounded(mode == 0 ? GREEN : CARD, 24));
-        searchTab.setBackground(rounded(mode == 1 ? GREEN : CARD, 24));
-        radioTab.setBackground(rounded(mode == 2 ? GREEN : CARD, 24));
-        libraryTab.setTextColor(mode == 0 ? BG : Color.WHITE);
-        searchTab.setTextColor(mode == 1 ? BG : Color.WHITE);
-        radioTab.setTextColor(mode == 2 ? BG : Color.WHITE);
-        searchRow.setVisibility(mode == 0 ? View.GONE : View.VISIBLE);
-        query.setHint(mode == 2 ? "Música ou artista para a rádio" : "O que você quer ouvir?");
-        searchButton.setText(mode == 2 ? "Gerar" : "Buscar");
+        results = mode == Mode.RADIO ? radioResults : searchResults;
+        Mode selected = mode == Mode.ARTIST ? artistOrigin : mode;
+        String[] icons = { "home", "search", "library", "radio" };
+        int i = 0;
+        for (Mode key : navigation.keySet()) {
+            boolean active = key == selected;
+            navigation.get(key).setSelected(active);
+            navigationIcons.get(key).setImageDrawable(new AcervoIcon(icons[i++], active ? Color.WHITE : MUTED));
+            navigationLabels.get(key).setTextColor(active ? Color.WHITE : MUTED);
+        }
+        searchRow.setVisibility(mode == Mode.SEARCH || mode == Mode.RADIO ? View.VISIBLE : View.GONE);
+        query.setHint(mode == Mode.RADIO ? "Música ou artista para a rádio" : "O que você quer ouvir?");
+        searchButton.setText(mode == Mode.RADIO ? "Gerar" : "Buscar");
         render();
     }
 
     private void render() {
         content.removeAllViews();
         downloadLabels.clear();
-        if (mode == 0) renderLibrary();
+        if (mode == Mode.HOME) renderHome();
+        else if (mode == Mode.LIBRARY) renderLibrary();
+        else if (mode == Mode.ARTIST) renderArtist();
         else renderResults();
+    }
+
+    private void renderHome() {
+        List<MobileLibrary.Track> tracks = library.all();
+        status.setText(online() ? "No seu celular · música em qualquer lugar" : "Você está offline · seus downloads continuam disponíveis");
+        add(content, text("Feito para o seu ritmo", 29, Color.WHITE, true), 0);
+        LinearLayout shortcuts = row();
+        addShortcut(shortcuts, "library", "Seus downloads", tracks.size() + " músicas no celular", () -> select(Mode.LIBRARY));
+        addShortcut(shortcuts, "radio", "Sua rádio", "A partir do que você ouve", () -> {
+            select(Mode.RADIO);
+            MobileLibrary.Track recent = library.recent();
+            if (recent != null) startRadio(recent.title, recent.artist, recent.id);
+        });
+        add(content, shortcuts, 20);
+        if (tracks.isEmpty()) {
+            LinearLayout welcome = column();
+            welcome.setPadding(dp(20), dp(24), dp(20), dp(24));
+            welcome.setBackground(rounded(SURFACE, 8));
+            add(welcome, text("Sua música, sempre com você", 24, Color.WHITE, true), 0);
+            add(welcome, text("Encontre suas favoritas, salve no celular e ouça mesmo sem internet ou computador.", 15, MUTED, false), 12);
+            Button discover = button("Encontrar músicas", true);
+            discover.setOnClickListener(v -> { select(Mode.SEARCH); query.requestFocus(); });
+            add(welcome, discover, 20);
+            add(content, welcome, 24);
+            return;
+        }
+        List<MobileLibrary.Track> recent = new ArrayList<>();
+        for (MobileLibrary.Track track : tracks) if (track.playedAt > 0) recent.add(track);
+        Collections.sort(recent, (a, b) -> Long.compare(b.playedAt, a.playedAt));
+        if (!recent.isEmpty()) {
+            section("Ouvidas recentemente", "Continue de onde seu gosto deixou.");
+            addTrackRail(recent, 8);
+        }
+        section("Salvas no seu celular", "Prontas para tocar com ou sem conexão.");
+        addTrackRail(tracks, 12);
+        section("Seus artistas", "Quem está na sua biblioteca.");
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout artists = row();
+        Map<String, String> names = new LinkedHashMap<>();
+        for (MobileLibrary.Track track : tracks) {
+            if (track.artist != null && !track.artist.trim().isEmpty()) names.putIfAbsent(track.artist.trim().toLowerCase(java.util.Locale.ROOT), track.artist.trim());
+        }
+        int count = 0;
+        for (String name : names.values()) {
+            if (count++ >= 12) break;
+            LinearLayout card = column();
+            card.setGravity(Gravity.CENTER_HORIZONTAL);
+            card.setPadding(dp(4), dp(8), dp(12), dp(8));
+            TextView avatar = artistAvatar(name, 78);
+            card.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
+            TextView label = text(name, 13, Color.WHITE, true);
+            label.setGravity(Gravity.CENTER);
+            label.setMaxLines(2);
+            label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            add(card, label, 10);
+            card.setContentDescription("Ver artista " + name);
+            card.setFocusable(true);
+            card.setOnClickListener(v -> openArtist(name));
+            artists.addView(card, new LinearLayout.LayoutParams(dp(112), -2));
+        }
+        scroll.addView(artists);
+        add(content, scroll, 12);
+    }
+
+    private void section(String title, String description) {
+        add(content, text(title, 22, Color.WHITE, true), 28);
+        if (description != null && !description.isEmpty()) add(content, text(description, 12, MUTED, false), 6);
+    }
+
+    private void addShortcut(LinearLayout parent, String icon, String title, String subtitle, Runnable action) {
+        LinearLayout card = column();
+        card.setPadding(dp(12), dp(16), dp(10), dp(14));
+        card.setBackground(rounded(CARD, 8));
+        ImageView image = new ImageView(this);
+        image.setImageDrawable(new AcervoIcon(icon, Color.WHITE));
+        card.addView(image, new LinearLayout.LayoutParams(dp(24), dp(24)));
+        add(card, text(title, 14, Color.WHITE, true), 12);
+        add(card, text(subtitle, 11, MUTED, false), 4);
+        card.setFocusable(true);
+        card.setContentDescription(title + ". " + subtitle);
+        card.setOnClickListener(v -> action.run());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -1, 1);
+        if (parent.getChildCount() > 0) params.leftMargin = dp(10);
+        parent.addView(card, params);
+    }
+
+    private void addTrackRail(List<MobileLibrary.Track> tracks, int limit) {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout rail = row();
+        rail.setGravity(Gravity.TOP);
+        for (int i = 0; i < Math.min(limit, tracks.size()); i++) {
+            MobileLibrary.Track track = tracks.get(i);
+            LinearLayout tile = column();
+            tile.setPadding(0, dp(4), dp(14), dp(8));
+            ImageView cover = artwork(track.thumbnail, 140);
+            tile.addView(cover, new LinearLayout.LayoutParams(dp(140), dp(140)));
+            cover.setContentDescription("Ouvir " + track.title);
+            cover.setOnClickListener(v -> playSaved(track));
+            TextView name = text(track.title, 14, Color.WHITE, true);
+            name.setMaxLines(2);
+            name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            name.setOnClickListener(v -> playSaved(track));
+            add(tile, name, 10);
+            TextView artist = artistLink(track.artist, 12);
+            artist.setMaxLines(1);
+            artist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            add(tile, artist, 5);
+            rail.addView(tile, new LinearLayout.LayoutParams(dp(154), -2));
+        }
+        scroll.addView(rail);
+        add(content, scroll, 12);
     }
 
     private void renderLibrary() {
         List<MobileLibrary.Track> tracks = library.all();
         add(content, text("Sua biblioteca", 30, Color.WHITE, true), 0);
-        status.setText(tracks.size() + (tracks.size() == 1 ? " música salva neste celular" : " músicas salvas neste celular"));
-        add(content, text("Baixe pela sua internet e ouça mesmo sem conexão.", 14, MUTED, false), 8);
+        status.setText(online() ? "Seus downloads · disponíveis offline" : "Modo offline · tudo salvo neste celular");
+        long duration = 0;
+        for (MobileLibrary.Track track : tracks) duration += track.duration;
+        add(content, text(tracks.size() + (tracks.size() == 1 ? " música salva" : " músicas salvas")
+                + (duration > 0 ? " · " + durationText(duration) : ""), 13, MUTED, false), 10);
         if (tracks.isEmpty()) {
-            add(content, text("Seu próximo favorito está por aí.", 22, Color.WHITE, true), 38);
-            add(content, text("Busque uma música ou artista. Os downloads ficam nesta biblioteca, disponíveis com o computador desligado.", 15, MUTED, false), 12);
+            section("Vamos começar sua coleção", "Baixe uma música para ela aparecer aqui.");
             Button discover = button("Encontrar músicas", true);
-            discover.setOnClickListener(v -> { select(1); query.requestFocus(); });
+            discover.setOnClickListener(v -> { select(Mode.SEARCH); query.requestFocus(); });
             add(content, discover, 22);
+            return;
         }
-        for (MobileLibrary.Track track : tracks) {
-            LinearLayout card = songCard(track.title, track.artist, track.thumbnail, track.duration);
-            LinearLayout actions = row();
-            Button play = button("Ouvir", true);
-            play.setOnClickListener(v -> { radioPlayback = false; radioQueue.clear(); radioIndex = -1; playRequest++; playTrack(track); });
+        Button play = button("Reproduzir", true);
+        play.setOnClickListener(v -> playSaved(tracks.get(0)));
+        LinearLayout actions = row();
+        actions.addView(play);
+        TextView order = text("Mais recentes primeiro", 12, MUTED, false);
+        order.setPadding(dp(16), 0, 0, 0);
+        actions.addView(order);
+        add(content, actions, 20);
+        for (MobileLibrary.Track track : tracks) add(content, savedRow(track), 8);
+    }
+
+    private LinearLayout savedRow(MobileLibrary.Track track) {
+        LinearLayout line = row();
+        line.setMinimumHeight(dp(76));
+        ImageView cover = artwork(track.thumbnail, 52);
+        line.addView(cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        cover.setContentDescription("Ouvir " + track.title);
+        cover.setOnClickListener(v -> playSaved(track));
+        LinearLayout info = column();
+        info.setPadding(dp(12), dp(8), dp(4), dp(8));
+        TextView title = text(track.title, 15, playingTrack != null && track.id.equals(playingTrack.id) ? GREEN : Color.WHITE, true);
+        title.setMaxLines(2);
+        title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        title.setOnClickListener(v -> playSaved(track));
+        info.addView(title);
+        TextView artist = artistLink(track.artist, 12);
+        add(info, artist, 5);
+        TextView meta = text("Salva" + (track.duration > 0 ? " · " + time(track.duration) : ""), 10, MUTED, false);
+        add(info, meta, 4);
+        info.setOnClickListener(v -> playSaved(track));
+        line.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        Button more = iconButton("more", "Opções de " + track.title, false);
+        more.setOnClickListener(v -> showTrackOptions(track));
+        line.addView(more);
+        return line;
+    }
+
+    private void playSaved(MobileLibrary.Track track) {
+        radioPlayback = false;
+        radioQueue.clear();
+        radioIndex = -1;
+        localQueue = new ArrayList<>();
+        for (MobileLibrary.Track candidate : library.all()) {
+            if (mode != Mode.ARTIST || (candidate.artist != null && artistName.equalsIgnoreCase(candidate.artist.trim()))) localQueue.add(candidate);
+        }
+        playRequest++;
+        playTrack(track);
+    }
+
+    private void showTrackOptions(MobileLibrary.Track track) {
+        new AlertDialog.Builder(this).setTitle(track.title)
+                .setItems(new String[] { "Reproduzir", "Ver artista", "Iniciar rádio", "Excluir download deste celular" }, (dialog, choice) -> {
+                    if (choice == 0) playSaved(track);
+                    else if (choice == 1) openArtist(track.artist);
+                    else if (choice == 2) startRadio(track.title, track.artist, track.id);
+                    else confirmRemove(track);
+                }).show();
+    }
+
+    private void openArtist(String name) {
+        if (name == null || name.trim().isEmpty()) return;
+        if (expandedPlayer != null) expandedPlayer.dismiss();
+        if (mode != Mode.ARTIST) artistOrigin = mode;
+        artistName = name.trim();
+        select(Mode.ARTIST);
+    }
+
+    private void renderArtist() {
+        status.setText("Artista · sua biblioteca neste celular");
+        Button back = iconButton("back", "Voltar", false);
+        back.setOnClickListener(v -> select(artistOrigin));
+        content.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        LinearLayout hero = column();
+        hero.setGravity(Gravity.CENTER_HORIZONTAL);
+        hero.setPadding(dp(16), dp(12), dp(16), dp(24));
+        TextView avatar = artistAvatar(artistName, 112);
+        hero.addView(avatar, new LinearLayout.LayoutParams(dp(112), dp(112)));
+        TextView name = text(artistName, 30, Color.WHITE, true);
+        name.setGravity(Gravity.CENTER);
+        add(hero, name, 18);
+        TextView label = text("NA SUA BIBLIOTECA", 10, MUTED, true);
+        label.setGravity(Gravity.CENTER);
+        add(hero, label, 10);
+        add(content, hero, 0);
+        List<MobileLibrary.Track> tracks = new ArrayList<>();
+        for (MobileLibrary.Track track : library.all()) if (track.artist != null && artistName.equalsIgnoreCase(track.artist.trim())) tracks.add(track);
+        long duration = 0;
+        for (MobileLibrary.Track track : tracks) duration += track.duration;
+        add(content, text(tracks.size() + (tracks.size() == 1 ? " música salva" : " músicas salvas")
+                + (duration > 0 ? " · " + durationText(duration) : ""), 13, MUTED, false), 0);
+        LinearLayout actions = row();
+        if (!tracks.isEmpty()) {
+            Button play = button("Reproduzir", true);
+            play.setOnClickListener(v -> playSaved(tracks.get(0)));
             actions.addView(play);
-            Button radio = button("Rádio", false);
-            radio.setOnClickListener(v -> startRadio(track.title, track.artist, track.id));
-            actions.addView(radio);
-            Button remove = button("•••", false);
-            remove.setContentDescription("Opções de " + track.title);
-            remove.setOnClickListener(v -> new AlertDialog.Builder(this).setTitle(track.title)
-                    .setItems(new String[] { "Excluir download deste celular" }, (dialog, choice) -> confirmRemove(track)).show());
-            actions.addView(remove);
-            add(card, actions, 12);
-            add(content, card, 14);
         }
+        Button find = button("Buscar músicas", false);
+        find.setOnClickListener(v -> { String value = artistName; select(Mode.SEARCH); query.setText(value); search(value, false); });
+        LinearLayout.LayoutParams findParams = new LinearLayout.LayoutParams(-2, -2);
+        findParams.leftMargin = tracks.isEmpty() ? 0 : dp(8);
+        actions.addView(find, findParams);
+        add(content, actions, 18);
+        if (!tracks.isEmpty()) {
+            section("Músicas no seu celular", "Disponíveis para ouvir offline.");
+            for (MobileLibrary.Track track : tracks) add(content, savedRow(track), 8);
+            List<MobileLibrary.Track> mostPlayed = new ArrayList<>();
+            for (MobileLibrary.Track track : tracks) if (track.plays > 0) mostPlayed.add(track);
+            Collections.sort(mostPlayed, (a, b) -> Long.compare(b.plays, a.plays));
+            if (!mostPlayed.isEmpty()) {
+                section("As que você mais ouve", "Com base nas reproduções neste celular.");
+                addTrackRail(mostPlayed, 6);
+            }
+        } else {
+            section("Sua coleção começa aqui", "Nenhuma música desse artista foi salva neste celular ainda.");
+        }
+        section("Sobre esta página", "");
+        add(content, text("Aqui estão as músicas identificadas como “" + artistName + "” no seu acervo. "
+                + "As informações vêm dos arquivos salvos neste celular. O perfil continua disponível offline.", 14, MUTED, false), 12);
+    }
+
+    private TextView artistAvatar(String name, int size) {
+        String[] words = name.trim().split("\\s+");
+        String first = words.length == 0 || words[0].isEmpty() ? "♪" : words[0].substring(0, words[0].offsetByCodePoints(0, 1));
+        String last = words.length > 1 ? words[words.length - 1].substring(0, words[words.length - 1].offsetByCodePoints(0, 1)) : "";
+        TextView avatar = text((first + last).toUpperCase(java.util.Locale.ROOT), size / 3, Color.WHITE, true);
+        avatar.setGravity(Gravity.CENTER);
+        avatar.setBackground(rounded(CARD, size));
+        avatar.setContentDescription("Artista " + name);
+        return avatar;
+    }
+
+    private TextView artistLink(String artist, int size) {
+        String name = artist == null ? "" : artist.trim();
+        TextView view = text(name.isEmpty() ? "Artista desconhecido" : name, size, MUTED, false);
+        if (!name.isEmpty()) {
+            view.setContentDescription("Ver artista " + name);
+            view.setPadding(0, dp(3), 0, dp(3));
+            view.setFocusable(true);
+            view.setOnClickListener(v -> openArtist(name));
+        }
+        return view;
     }
 
     private void renderResults() {
-        add(content, text(mode == 2 ? "Sua rádio, ao vivo" : "Encontre seu próximo som", 28, Color.WHITE, true), 0);
-        if (mode == 2) {
+        add(content, text(mode == Mode.RADIO ? "Sua rádio, ao vivo" : "Encontre seu próximo som", 28, Color.WHITE, true), 0);
+        if (mode == Mode.RADIO) {
             add(content, text(radioSeed.isEmpty() ? "Escolha uma música ou use o que ouviu recentemente." : "A partir de " + radioSeed, 14, MUTED, false), 8);
             MobileLibrary.Track recent = library.recent();
             if (recent != null) {
-                Button latest = button("Usar música recente", false);
+                Button latest = button(recent.playedAt > 0 ? "Usar música recente" : "Usar último download", false);
                 latest.setOnClickListener(v -> startRadio(recent.title, recent.artist, recent.id));
                 add(content, latest, 12);
             }
         }
         if (results.isEmpty()) {
-            status.setText(mode == 2 ? "Novas sugestões são buscadas pela internet do celular." : "Busca e downloads usam a internet deste celular.");
-            add(content, text(mode == 2 ? "Defina o ponto de partida acima para buscar músicas semelhantes." : "Digite um artista, uma música ou cole um link do YouTube.", 15, MUTED, false), 28);
+            status.setText(!online() ? "Sem internet · ouça seus downloads na Biblioteca."
+                    : mode == Mode.RADIO ? "Novas sugestões são buscadas pela internet do celular." : "Busca e downloads usam a internet deste celular.");
+            add(content, text(mode == Mode.RADIO ? "Defina o ponto de partida acima para buscar músicas semelhantes." : "Digite um artista, uma música ou cole um link do YouTube.", 15, MUTED, false), 28);
             return;
         }
-        status.setText(results.size() + " resultados · internet do celular");
+        status.setText(results.size() + (online() ? " resultados · internet do celular" : " resultados anteriores · você está offline"));
         for (MobileSource.Song song : results) {
             LinearLayout card = songCard(song.title, song.artist, song.thumbnail, song.duration);
             LinearLayout actions = row();
             MobileLibrary.Track saved = library.get(song.id);
             if (saved != null) {
                 Button play = button("Ouvir offline", true);
-                play.setOnClickListener(v -> { if (mode == 2) playRadioSaved(song, saved); else { radioPlayback = false; playRequest++; playTrack(saved); } });
+                play.setOnClickListener(v -> { if (mode == Mode.RADIO) playRadioSaved(song, saved); else playSaved(saved); });
                 actions.addView(play);
             } else {
                 Button save = button("Baixar", false);
                 save.setOnClickListener(v -> download(song, false));
                 actions.addView(save);
                 Button listen = button("Baixar e ouvir", true);
-                listen.setOnClickListener(v -> { if (mode == 2) listenRadio(song); else { radioPlayback = false; download(song, true); } });
+                listen.setOnClickListener(v -> { if (mode == Mode.RADIO) listenRadio(song); else { radioPlayback = false; download(song, true); } });
                 actions.addView(listen);
             }
             Button radio = button("Rádio", false);
@@ -298,7 +584,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         if (value.isEmpty()) { query.setError("Digite uma música ou artista."); return; }
         InputMethodManager keyboard = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (keyboard != null) keyboard.hideSoftInputFromWindow(query.getWindowToken(), 0);
-        if (mode == 2) { radioSeed = value; excludedId = ""; search(value + " músicas semelhantes", true); }
+        if (mode == Mode.RADIO) { radioSeed = value; excludedId = ""; search(value + " músicas semelhantes", true); }
         else search(value, false);
     }
 
@@ -312,14 +598,19 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         radioSeed = title + (artist == null || artist.isEmpty() ? "" : " · " + artist);
         excludedId = id;
         radioResults = new ArrayList<>();
-        select(2);
+        select(Mode.RADIO);
         query.setText(title);
         search((artist == null || artist.isEmpty() ? title : artist) + " " + title + " músicas parecidas", true);
     }
 
     private void search(String value, boolean radio) {
+        if (!online()) {
+            searchButton.setEnabled(true);
+            status.setText("Sem internet. Seus downloads continuam disponíveis na Biblioteca.");
+            return;
+        }
         int generation = searches.incrementAndGet();
-        int requestedMode = mode;
+        Mode requestedMode = mode;
         String exclude = excludedId;
         searchButton.setEnabled(false);
         status.setText(radio ? "Buscando sugestões em tempo real…" : "Pesquisando pela internet do celular…");
@@ -378,7 +669,16 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private void download(MobileSource.Song song, boolean listen, boolean quiet) {
         if (listen) playAfterDownload.put(song.id, ++playRequest);
         MobileLibrary.Track saved = library.get(song.id);
-        if (saved != null) { if (listen) playTrack(saved); return; }
+        if (saved != null) {
+            if (listen) { if (!radioPlayback) localQueue = library.all(); playTrack(saved); }
+            return;
+        }
+        if (!online()) {
+            playAfterDownload.remove(song.id);
+            setProgress(song.id, "Conecte à internet para baixar.");
+            if (!quiet) toast("Conecte à internet para baixar. As músicas salvas continuam disponíveis.");
+            return;
+        }
         if (!downloading.add(song.id)) { if (!quiet) toast("Esta música já está sendo baixada."); return; }
         setProgress(song.id, quiet ? "Preparando a próxima…" : "Preparando download…");
         work.execute(() -> {
@@ -394,7 +694,10 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 post(() -> {
                     render();
                     if (!quiet) toast("Música salva neste celular.");
-                    if (requested != null && requested == playRequest) playTrack(track);
+                    if (requested != null && requested == playRequest) {
+                        if (!radioPlayback) localQueue = library.all();
+                        playTrack(track);
+                    }
                 });
             } catch (Exception failure) {
                 downloading.remove(song.id);
@@ -412,39 +715,58 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
 
     private LinearLayout songCard(String title, String artist, String thumbnail, long duration) {
         LinearLayout card = column();
-        card.setBackground(rounded(SURFACE, 12));
+        card.setBackground(rounded(SURFACE, 8));
         card.setPadding(dp(14), dp(14), dp(14), dp(10));
         LinearLayout details = row();
-        ImageView cover = new ImageView(this);
-        cover.setImageResource(R.drawable.ic_acervo);
-        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        cover.setBackground(rounded(CARD, 6));
+        ImageView cover = artwork(thumbnail, 56);
         details.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        loadCover(cover, thumbnail);
         LinearLayout description = column();
         description.setPadding(dp(12), 0, 0, 0);
         TextView name = text(title, 16, Color.WHITE, true);
         name.setMaxLines(2);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         description.addView(name);
-        TextView by = text((artist == null ? "" : artist) + (duration > 0 ? " · " + time(duration) : ""), 12, MUTED, false);
+        TextView by = artistLink(artist, 12);
         by.setMaxLines(1);
         by.setEllipsize(android.text.TextUtils.TruncateAt.END);
         add(description, by, 5);
+        if (duration > 0) add(description, text(time(duration), 10, MUTED, false), 2);
         details.addView(description, new LinearLayout.LayoutParams(0, -2, 1));
         card.addView(details);
         return card;
     }
 
+    private ImageView artwork(String url, int size) {
+        ImageView cover = new ImageView(this);
+        cover.setImageResource(R.drawable.ic_acervo);
+        cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        cover.setBackground(rounded(CARD, 6));
+        cover.setClipToOutline(true);
+        loadCover(cover, url);
+        return cover;
+    }
+
     private void loadCover(ImageView target, String url) {
-        if (url == null || !url.startsWith("https://")) return;
         target.setTag(url);
+        if (url == null || !url.startsWith("https://")) return;
         Bitmap cached = coverCache.get(url);
         if (cached != null) { target.setImageBitmap(cached); return; }
         covers.execute(() -> {
             if (destroyed) return;
             HttpURLConnection connection = null;
             try {
+                File cachedFile = artworkFile(url);
+                synchronized (coverCache) {
+                    if (cachedFile.isFile()) {
+                        Bitmap image = BitmapFactory.decodeFile(cachedFile.getAbsolutePath());
+                        if (image != null) {
+                            coverCache.put(url, image);
+                            post(() -> { if (url.equals(target.getTag())) target.setImageBitmap(image); });
+                            return;
+                        }
+                    }
+                }
+                if (!online()) return;
                 connection = MobileLibrary.openHttps(url);
                 byte[] bytes;
                 try (InputStream input = connection.getInputStream()) { bytes = MobileLibrary.readLimited(input, 2 * 1024 * 1024); }
@@ -459,27 +781,110 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 Bitmap image = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
                 if (image == null) return;
                 coverCache.put(url, image);
+                try {
+                    File folder = cachedFile.getParentFile();
+                    if (folder != null && (folder.isDirectory() || folder.mkdirs())) {
+                        synchronized (coverCache) {
+                            try (FileOutputStream output = new FileOutputStream(cachedFile)) {
+                                image.compress(Bitmap.CompressFormat.JPEG, 85, output);
+                            }
+                        }
+                    }
+                } catch (Exception ignored) { /* A full artwork cache never prevents playback. */ }
                 post(() -> { if (url.equals(target.getTag())) target.setImageBitmap(image); });
             } catch (Exception ignored) { /* An unavailable cover never hides a playable song. */ }
             finally { if (connection != null) connection.disconnect(); }
         });
     }
 
+    private File artworkFile(String url) throws Exception {
+        byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(url.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        StringBuilder key = new StringBuilder();
+        for (byte value : digest) key.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
+        return new File(new File(getFilesDir(), "mobile-artwork"), key + ".jpg");
+    }
+
     private void buildPlayer(LinearLayout root) {
         playerPanel = column();
-        playerPanel.setPadding(dp(20), dp(12), dp(20), dp(10));
-        playerPanel.setBackgroundColor(CARD);
+        playerPanel.setPadding(dp(8), dp(5), dp(8), 0);
         playerPanel.setVisibility(View.GONE);
-        playerTitle = text("", 15, Color.WHITE, true);
+        LinearLayout mini = row();
+        mini.setBackground(rounded(CARD, 8));
+        mini.setPadding(dp(8), dp(8), dp(4), dp(5));
+        playerCover = artwork("", 42);
+        mini.addView(playerCover, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        LinearLayout info = column();
+        info.setPadding(dp(10), 0, dp(4), 0);
+        playerTitle = text("", 13, Color.WHITE, true);
         playerTitle.setMaxLines(1);
         playerTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        playerPanel.addView(playerTitle);
-        playerArtist = text("", 12, MUTED, false);
-        add(playerPanel, playerArtist, 4);
+        info.addView(playerTitle);
+        playerArtist = text("", 11, MUTED, false);
+        playerArtist.setMaxLines(1);
+        playerArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        add(info, playerArtist, 4);
+        mini.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        playButton = iconButton("play", "Reproduzir", false);
+        playButton.setOnClickListener(v -> togglePlayback());
+        mini.addView(playButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        Button next = iconButton("next", "Próxima música", false);
+        next.setOnClickListener(v -> skip(1));
+        mini.addView(next, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        mini.setContentDescription("Abrir reprodutor");
+        mini.setOnClickListener(v -> openPlayer());
+        info.setOnClickListener(v -> openPlayer());
+        playerCover.setOnClickListener(v -> openPlayer());
+        playerPanel.addView(mini);
+        miniProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        miniProgress.setMax(1000);
+        miniProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+        miniProgress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
+        LinearLayout.LayoutParams bar = new LinearLayout.LayoutParams(-1, dp(2));
+        bar.setMargins(dp(8), 0, dp(8), 0);
+        playerPanel.addView(miniProgress, bar);
+        root.addView(playerPanel);
+    }
+
+    private void openPlayer() {
+        if (playingTrack == null || destroyed) return;
+        if (expandedPlayer != null && expandedPlayer.isShowing()) return;
+        Dialog dialog = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
+        expandedPlayer = dialog;
+        LinearLayout page = column();
+        page.setBackgroundColor(SURFACE);
+        LinearLayout top = row();
+        top.setPadding(dp(12), dp(12), dp(12), dp(12));
+        Button collapse = iconButton("down", "Minimizar reprodutor", false);
+        collapse.setOnClickListener(v -> dialog.dismiss());
+        top.addView(collapse);
+        TextView source = text("TOCANDO NESTE CELULAR", 10, MUTED, true);
+        source.setGravity(Gravity.CENTER);
+        top.addView(source, new LinearLayout.LayoutParams(0, -2, 1));
+        Button more = iconButton("more", "Opções da música", false);
+        more.setOnClickListener(v -> { if (playingTrack != null) showTrackOptions(playingTrack); });
+        top.addView(more);
+        page.addView(top);
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout body = column();
+        body.setPadding(dp(24), dp(8), dp(24), dp(24));
+        int size = Math.min(420, Math.max(160, Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 48));
+        expandedCover = artwork(playingTrack.thumbnail, size);
+        LinearLayout.LayoutParams artParams = new LinearLayout.LayoutParams(dp(size), dp(size));
+        artParams.gravity = Gravity.CENTER_HORIZONTAL;
+        body.addView(expandedCover, artParams);
+        expandedTitle = text(playingTrack.title, 25, Color.WHITE, true);
+        expandedTitle.setMaxLines(3);
+        expandedTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        add(body, expandedTitle, 28);
+        expandedArtist = artistLink(playingTrack.artist, 16);
+        expandedArtist.setOnClickListener(v -> { if (playingTrack != null) openArtist(playingTrack.artist); });
+        add(body, expandedArtist, 8);
         seek = new SeekBar(this);
         seek.setMax(1000);
         seek.setProgressTintList(android.content.res.ColorStateList.valueOf(GREEN));
+        seek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
         seek.setThumbTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
+        seek.setContentDescription("Posição da música");
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onStartTrackingTouch(SeekBar bar) { seeking = true; }
             @Override public void onStopTrackingTouch(SeekBar bar) {
@@ -488,33 +893,84 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             }
             @Override public void onProgressChanged(SeekBar bar, int value, boolean user) { }
         });
-        add(playerPanel, seek, 6);
+        add(body, seek, 24);
         LinearLayout times = row();
-        elapsed = text("0:00", 10, MUTED, false);
-        remaining = text("0:00", 10, MUTED, false);
+        elapsed = text("0:00", 11, MUTED, false);
+        remaining = text("0:00", 11, MUTED, false);
         times.addView(elapsed, new LinearLayout.LayoutParams(0, -2, 1));
         times.addView(remaining);
-        playerPanel.addView(times);
+        body.addView(times);
         LinearLayout controls = row();
         controls.setGravity(Gravity.CENTER);
-        Button previous = button("⏮", false);
-        previous.setContentDescription("Música anterior");
+        Button previous = iconButton("previous", "Música anterior", false);
         previous.setOnClickListener(v -> skip(-1));
-        playButton = button("▶", true);
-        playButton.setContentDescription("Reproduzir ou pausar");
-        playButton.setOnClickListener(v -> {
-            if (player == null || preparing) return;
-            try { if (player.isPlaying()) pause(); else startPrepared(); }
-            catch (IllegalStateException failure) { toast("Escolha a música novamente para tocar."); }
-        });
-        Button next = button("⏭", false);
-        next.setContentDescription("Próxima música");
+        controls.addView(previous, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        expandedPlay = iconButton("play", "Reproduzir", true);
+        expandedPlay.setOnClickListener(v -> togglePlayback());
+        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(dp(72), dp(72));
+        playParams.setMargins(dp(20), 0, dp(20), 0);
+        controls.addView(expandedPlay, playParams);
+        Button next = iconButton("next", "Próxima música", false);
         next.setOnClickListener(v -> skip(1));
-        controls.addView(previous);
-        controls.addView(playButton);
-        controls.addView(next);
-        add(playerPanel, controls, 3);
-        root.addView(playerPanel);
+        controls.addView(next, new LinearLayout.LayoutParams(dp(64), dp(64)));
+        add(body, controls, 22);
+        Button radio = button("Iniciar rádio desta música", false);
+        radio.setOnClickListener(v -> {
+            if (playingTrack == null) return;
+            dialog.dismiss();
+            startRadio(playingTrack.title, playingTrack.artist, playingTrack.id);
+        });
+        add(body, radio, 28);
+        add(body, text("Áudio salvo no celular · disponível offline", 12, MUTED, false), 12);
+        scroll.addView(body);
+        page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        dialog.setContentView(page);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setStatusBarColor(SURFACE);
+            window.setNavigationBarColor(SURFACE);
+            window.setLayout(-1, -1);
+        }
+        dialog.setOnDismissListener(value -> {
+            if (expandedPlayer == dialog) {
+                expandedPlayer = null;
+                expandedPlay = null;
+                expandedCover = null;
+                expandedTitle = null;
+                expandedArtist = null;
+                seek = null;
+                elapsed = null;
+                remaining = null;
+                seeking = false;
+            }
+        });
+        dialog.show();
+        if (window != null) window.setLayout(-1, -1);
+        applyPlayerInsets(page, window);
+        updatePlayer();
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applyPlayerInsets(View page, Window window) {
+        if (window != null && Build.VERSION.SDK_INT >= 30) window.setDecorFitsSystemWindows(false);
+        else if (window != null) window.getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION);
+        page.setOnApplyWindowInsetsListener((view, insets) -> {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets safe = insets.getInsets(android.view.WindowInsets.Type.systemBars()
+                        | android.view.WindowInsets.Type.displayCutout());
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom);
+            } else view.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets;
+        });
+        page.requestApplyInsets();
+    }
+
+    private void togglePlayback() {
+        if (player == null || preparing) return;
+        try { if (player.isPlaying()) pause(); else startPrepared(); }
+        catch (IllegalStateException failure) { toast("Escolha a música novamente para tocar."); }
     }
 
     private void playTrack(MobileLibrary.Track track) {
@@ -522,9 +978,19 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         playingTrack = track;
         playerPanel.setVisibility(View.VISIBLE);
         playerTitle.setText(track.title);
-        playerArtist.setText(track.artist + " · salvo neste celular");
+        playerArtist.setText(track.artist);
+        playerCover.setImageResource(R.drawable.ic_acervo);
+        loadCover(playerCover, track.thumbnail);
+        if (expandedTitle != null) expandedTitle.setText(track.title);
+        if (expandedArtist != null) expandedArtist.setText(track.artist);
+        if (expandedCover != null) {
+            expandedCover.setImageResource(R.drawable.ic_acervo);
+            loadCover(expandedCover, track.thumbnail);
+        }
         PlaybackService.update(this, track.title, track.artist, false);
-        playButton.setText("…");
+        setIcon(playButton, "play", Color.WHITE);
+        playButton.setEnabled(false);
+        if (expandedPlay != null) expandedPlay.setEnabled(false);
         preparing = true;
         playRecorded = false;
         MediaPlayer candidate = new MediaPlayer();
@@ -534,6 +1000,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         candidate.setOnPreparedListener(ready -> {
             if (ready != player) return;
             preparing = false;
+            playButton.setEnabled(true);
+            if (expandedPlay != null) expandedPlay.setEnabled(true);
             startPrepared();
             updatePlayer();
         });
@@ -553,7 +1021,12 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
 
     private void skip(int direction) {
         if (radioPlayback) { if (direction > 0) nextRadio(); else previousRadio(); return; }
-        List<MobileLibrary.Track> queue = library.all();
+        List<MobileLibrary.Track> queue = new ArrayList<>();
+        for (MobileLibrary.Track track : localQueue) {
+            MobileLibrary.Track current = library.get(track.id);
+            if (current != null) queue.add(current);
+        }
+        if (queue.isEmpty()) queue = library.all();
         if (queue.isEmpty()) return;
         int index = -1;
         if (playingTrack != null) for (int i = 0; i < queue.size(); i++) if (queue.get(i).id.equals(playingTrack.id)) { index = i; break; }
@@ -630,14 +1103,22 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     }
 
     private void updatePlayer() {
-        if (player == null || preparing || seek == null) return;
+        if (player == null || preparing) return;
         try {
             int duration = player.getDuration();
             int position = player.getCurrentPosition();
-            if (!seeking) seek.setProgress(duration > 0 ? (int) ((long) position * 1000 / duration) : 0);
-            elapsed.setText(time(position / 1000));
-            remaining.setText(time(duration / 1000));
-            playButton.setText(player.isPlaying() ? "Ⅱ" : "▶");
+            int progress = duration > 0 ? (int) ((long) position * 1000 / duration) : 0;
+            if (!seeking && seek != null) seek.setProgress(progress);
+            if (miniProgress != null) miniProgress.setProgress(progress);
+            if (elapsed != null) elapsed.setText(time(position / 1000));
+            if (remaining != null) remaining.setText(time(duration / 1000));
+            boolean playing = player.isPlaying();
+            setIcon(playButton, playing ? "pause" : "play", Color.WHITE);
+            playButton.setContentDescription(playing ? "Pausar" : "Reproduzir");
+            if (expandedPlay != null) {
+                setIcon(expandedPlay, playing ? "pause" : "play", BG);
+                expandedPlay.setContentDescription(playing ? "Pausar" : "Reproduzir");
+            }
         } catch (IllegalStateException ignored) { }
     }
 
@@ -670,7 +1151,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         if (player != null) { player.setOnCompletionListener(null); player.release(); player = null; }
         preparing = false;
         if (audio != null && audioFocus != null) audio.abandonAudioFocusRequest(audioFocus);
-        if (playButton != null) playButton.setText("▶");
+        if (playButton != null) { setIcon(playButton, "play", Color.WHITE); playButton.setEnabled(true); }
+        if (expandedPlay != null) { setIcon(expandedPlay, "play", BG); expandedPlay.setEnabled(true); }
         PlaybackService.hide(this);
     }
 
@@ -678,7 +1160,10 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         new AlertDialog.Builder(this).setTitle("Excluir download?")
                 .setMessage("A música será removida apenas da biblioteca deste celular: " + track.title)
                 .setNegativeButton("Cancelar", null).setPositiveButton("Excluir", (dialog, which) -> {
-                    if (playingTrack != null && playingTrack.id.equals(track.id)) { releasePlayer(); playingTrack = null; playerPanel.setVisibility(View.GONE); }
+                    if (playingTrack != null && playingTrack.id.equals(track.id)) {
+                        releasePlayer(); playingTrack = null; playerPanel.setVisibility(View.GONE);
+                        if (expandedPlayer != null) expandedPlayer.dismiss();
+                    }
                     work.execute(() -> {
                         try { library.remove(track.id); post(this::render); }
                         catch (Exception failure) { post(() -> toast(message(failure))); }
@@ -686,13 +1171,14 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 }).show();
     }
 
-    @Override protected void onResume() { super.onResume(); foreground = true; }
+    @Override protected void onResume() { super.onResume(); foreground = true; if (content != null) render(); }
     @Override protected void onStop() { foreground = false; super.onStop(); }
     @Override protected void onDestroy() {
         PlaybackService.detach(this);
         destroyed = true;
         searches.incrementAndGet();
         main.removeCallbacksAndMessages(null);
+        if (expandedPlayer != null) expandedPlayer.dismiss();
         releasePlayer();
         work.shutdownNow();
         covers.shutdownNow();
@@ -714,6 +1200,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             releasePlayer();
             playingTrack = null;
             if (playerPanel != null) playerPanel.setVisibility(View.GONE);
+            if (expandedPlayer != null) expandedPlayer.dismiss();
         });
     }
 
@@ -724,6 +1211,24 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         return value.length() > 220 ? value.substring(0, 220) + "…" : value;
     }
     private static String time(long seconds) { return String.format(java.util.Locale.getDefault(), "%d:%02d", Math.max(0, seconds) / 60, Math.max(0, seconds) % 60); }
+    private static String durationText(long seconds) {
+        long minutes = Math.max(0, seconds) / 60;
+        return minutes >= 60 ? (minutes / 60) + " h " + (minutes % 60) + " min" : Math.max(1, minutes) + " min";
+    }
+    private boolean online() {
+        try {
+            ConnectivityManager manager = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            if (manager == null) return true;
+            NetworkCapabilities capabilities = manager.getNetworkCapabilities(manager.getActiveNetwork());
+            return capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (SecurityException ignored) { return true; }
+    }
+
+    @Override public void onBackPressed() {
+        if (mode == Mode.ARTIST) select(artistOrigin);
+        else if (mode != Mode.HOME) select(Mode.HOME);
+        else moveTaskToBack(true);
+    }
     private LinearLayout column() { LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); return layout; }
     private LinearLayout row() { LinearLayout layout = new LinearLayout(this); layout.setGravity(Gravity.CENTER_VERTICAL); return layout; }
     private TextView text(String value, int size, int color, boolean bold) {
@@ -737,6 +1242,22 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         button.setBackground(rounded(primary ? GREEN : CARD, 24)); button.setMinHeight(dp(44)); button.setMinimumHeight(dp(44));
         button.setMinWidth(dp(52)); button.setMinimumWidth(dp(52)); button.setPadding(dp(12), dp(8), dp(12), dp(8));
         return button;
+    }
+    private Button iconButton(String icon, String description, boolean primary) {
+        Button view = button("", primary);
+        view.setContentDescription(description);
+        if (!primary) view.setBackground(rounded(Color.TRANSPARENT, 32));
+        else view.setBackground(rounded(GREEN, 48));
+        setIcon(view, icon, primary ? BG : Color.WHITE);
+        return view;
+    }
+    private void setIcon(Button view, String icon, int color) {
+        AcervoIcon drawable = new AcervoIcon(icon, color);
+        drawable.setBounds(0, 0, dp(24), dp(24));
+        view.setText("");
+        view.setGravity(Gravity.CENTER);
+        view.setCompoundDrawables(drawable, null, null, null);
+        view.setPadding(dp(12), dp(10), dp(12), dp(10));
     }
     private GradientDrawable rounded(int color, int radius) { GradientDrawable value = new GradientDrawable(); value.setColor(color); value.setCornerRadius(dp(radius)); return value; }
     private void add(LinearLayout parent, View child, int top) { LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(top); parent.addView(child, params); }

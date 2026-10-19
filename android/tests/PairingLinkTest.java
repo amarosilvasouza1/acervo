@@ -23,6 +23,14 @@ public final class PairingLinkTest {
         equal("https://[2001:4860:4860::8888]/", PairingLink.parse("https://[2001:4860:4860::8888]:443/").url, "HTTPS public IPv6 literal");
         equal("https://xn--bcher-kva.example/", PairingLink.parse("https://xn--bcher-kva.example/").url, "Explicit ASCII internationalized domain");
         equal("https://192.168.1.10:4313/", PairingLink.parse("https://192.168.1.10:4313/").url, "HTTPS also supported on a private address");
+        String pin = "a1".repeat(32);
+        PairingLink pinned = PairingLink.parse("https://192.168.1.10:4314/#pair=" + TOKEN + "&spki=" + pin);
+        equal(pin, pinned.spkiPin, "QR carries the exact SPKI SHA256 identity");
+        equal(TOKEN, pinned.pairToken, "One-time token is independent of public pin");
+        equal(pinned.url, PairingLink.parse("https://192.168.1.10:4314/#spki=" + pin.toUpperCase() + "&pair=" + TOKEN).url, "Canonical pin and fragment ordering");
+        for (String fragment : new String[] { "spki=" + pin, "pair=" + TOKEN + "&spki=" + "a".repeat(63), "pair=" + TOKEN + "&spki=" + "g".repeat(64), "pair=" + TOKEN + "&pair=" + TOKEN, "pair=" + TOKEN + "&spki=" + pin + "&spki=" + pin, "pair=" + TOKEN + "&spki=" + pin + "&next=evil", "pair=" + TOKEN + "&spki=" + pin + "%00" }) reject("https://192.168.1.10:4314/#" + fragment);
+        reject("http://192.168.1.10:4314/#pair=" + TOKEN + "&spki=" + pin);
+        reject("https://music.example.com/#pair=" + TOKEN + "&spki=" + pin);
 
         // All edges of the RFC1918 172.16/12 range, without consulting DNS.
         for (int second = 0; second <= 255; second++) {

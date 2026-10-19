@@ -6,7 +6,7 @@
   var esc = AC.esc;
   var icon = AC.icon;
   var C = AC.connect = {
-    ready: false, connected: false, local: false, admin: false, cloud: false, configured: false, deviceId: null, devices: [], playback: null,
+    ready: false, connected: false, local: false, admin: false, cloud: false, configured: false, security: null, deviceId: null, devices: [], playback: null,
     receivedAt: 0, applying: false, dialog: null, pairing: null, candidate: 0, needsGesture: false
   };
   var events = null;
@@ -185,7 +185,7 @@
       if (pairingCode) history.replaceState(null, '', location.pathname + location.search);
       try {
         var config = await api('/api/connect/config');
-        C.cloud = Boolean(config.cloud); C.configured = true;
+        C.cloud = Boolean(config.cloud); C.security = config.security || null; C.configured = true;
         var info;
         if (pairingCode) info = await api('/api/connect/claim', { code: pairingCode, name: deviceName(), kind: kind() });
         else info = await api('/api/connect/info');
@@ -263,7 +263,9 @@
     var candidates = C.pairing.candidates || [];
     var selected = candidates[C.candidate] || C.pairing;
     if (!selected.url || !selected.qrDataUrl) return '<div class="connect-help">' + (C.cloud ? 'O endereço público do seu Acervo não está disponível. Confira a configuração do servidor.' : 'Nenhuma rede local encontrada. Conecte o computador ao Wi‑Fi ou ao cabo de rede e tente novamente.') + '</div>';
-    return '<div class="connect-qr"><img src="' + esc(selected.qrDataUrl) + '" alt="QR code para conectar o celular ao Acervo" width="220" height="220"></div><p class="connect-help">Abra a câmera do celular e aponte para o QR code. Ele vale por <span id="connect-countdown"></span> e conecta um aparelho.</p>' +
+    var pinned = C.pairing.security && C.pairing.security.type === 'tls-pinned' && /^[a-f0-9]{64}$/i.test(C.pairing.security.pin || '');
+    var security = pinned ? '<div class="connect-security"><strong>Conexão criptografada</strong><p>Escaneie com o leitor do APK. O QR confirma a identidade deste computador. No celular, abra Proteção para comparar o código:</p><code>' + esc(C.pairing.security.pin.toUpperCase().match(/.{1,8}/g).join(' ')) + '</code></div>' : '';
+    return '<div class="connect-qr"><img src="' + esc(selected.qrDataUrl) + '" alt="QR code para conectar o celular ao Acervo" width="220" height="220"></div><p class="connect-help">' + (pinned ? 'Abra Escanear QR code no APK atualizado.' : 'Abra a câmera do celular e aponte para o QR code.') + ' Ele vale por <span id="connect-countdown"></span> e conecta um aparelho.</p>' + security +
       (candidates.length > 1 ? '<label for="connect-network">' + (C.cloud ? 'Endereço de conexão' : 'Rede do computador') + '</label><select id="connect-network" class="seed-select">' + candidates.map(function (item, index) { return '<option value="' + index + '"' + (index === C.candidate ? ' selected' : '') + '>' + esc(item.address) + '</option>'; }).join('') + '</select>' : '') +
       '<div class="connect-copy"><input id="connect-url" readonly value="' + esc(selected.url) + '" aria-label="Link para conectar o celular"><button class="btn btn-ghost btn-sm" data-action="connect-copy">Copiar link</button></div><details class="connect-help"><summary>Usar o código manualmente</summary><code>' + esc(C.pairing.code) + '</code></details>' +
       '<button class="btn btn-quiet btn-sm" data-action="connect-create">Gerar novo QR code</button>';

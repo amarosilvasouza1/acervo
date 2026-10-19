@@ -2,6 +2,7 @@ package br.com.acervo.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.pm.PackageManager;
 import android.content.Intent;
@@ -50,13 +51,14 @@ import java.net.URL;
 /** Connects to a paired Acervo server, hosted locally or over HTTPS. */
 public final class MainActivity extends Activity implements PlaybackService.Controls {
     private static final int SCAN_REQUEST = 20;
-    private static final int BG = Color.rgb(18, 18, 18);
-    private static final int CARD = Color.rgb(36, 36, 36);
+    private static final int BG = Color.BLACK;
+    private static final int CARD = Color.rgb(31, 31, 31);
     private static final int GREEN = Color.rgb(30, 215, 96);
     private static final int MUTED = Color.rgb(179, 179, 179);
     private final Handler handler = new Handler(Looper.getMainLooper());
     private SharedPreferences preferences;
     private WebView webView;
+    private SecureWebClient secureClient;
     private FrameLayout page;
     private View loading;
     private View connectionError;
@@ -151,6 +153,9 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
                 TextView address = text(previous.origin, 12, MUTED, false);
                 address.setGravity(Gravity.CENTER);
                 add(body, address, 7);
+                Button protection = button("Verificar conexão", false);
+                protection.setOnClickListener(v -> showSecurity(previous.origin));
+                add(body, protection, 10);
             } catch (IllegalArgumentException ignored) {
                 preferences.edit().remove("server_origin").apply();
             }
@@ -168,7 +173,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(MUTED);
         input.setHint("https://seu-acervo.exemplo.com/#pair=…");
-        input.setContentDescription("Link HTTPS do Acervo na nuvem ou link da rede local");
+        input.setContentDescription("Link HTTPS do Acervo ou QR code com a identidade do computador");
         input.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
         input.setBackground(rounded(CARD, 12));
         input.setPadding(dp(16), dp(15), dp(16), dp(15));
@@ -193,7 +198,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         steps.addView(text("Conecte em poucos segundos", 16, Color.WHITE, true));
         add(steps, text("1  Abra seu Acervo no navegador.\n2  Entre em Conectar dispositivos.\n3  Gere o QR code e escaneie aqui.", 14, MUTED, false), 12);
         add(body, steps, 28);
-        TextView note = text("Com seu Acervo hospedado na nuvem e um link HTTPS, use Wi-Fi ou dados móveis mesmo com o computador desligado. Um link local (http://192.168…) precisa do computador ligado na mesma rede. Para tocar neste celular, escolha este aparelho em Dispositivos.", 12, MUTED, false);
+        TextView note = text("O QR code confirma a identidade do computador e cria uma conexão criptografada. Atualize o Acervo no PC e gere um novo QR para substituir conexões antigas por HTTP. O PC precisa estar acessível para sincronizar; as músicas salvas neste celular continuam independentes.", 12, MUTED, false);
         note.setLineSpacing(dp(3), 1);
         add(body, note, 20);
         body.setFocusableInTouchMode(true);
@@ -203,12 +208,51 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     }
 
     private void connect(PairingLink link) {
+        try {
+            if (!link.origin.startsWith("https://")) throw new IllegalArgumentException("Esta versão exige uma conexão criptografada. Atualize o Acervo no PC e escaneie o novo QR code HTTPS.");
+            SecureTransport.trust(this, link);
+        } catch (Exception failure) {
+            showHome(failure.getMessage());
+            return;
+        }
         selectedOrigin = link.origin;
         retryUrl = link.url;
         // Only the server address is remembered; the one-time QR token is not.
         preferences.edit().putString("server_origin", link.origin).apply();
         createBrowser();
         navigate(link.url);
+    }
+
+    private void showSecurity(String origin) {
+        if (origin == null || isFinishing()) return;
+        String pin = SecureTransport.getPin(this, origin);
+        LinearLayout body = column();
+        body.setPadding(dp(24), dp(12), dp(24), dp(8));
+        add(body, text(origin, 12, MUTED, false), 4);
+        String description = pin == null || pin.isEmpty()
+                ? "Esta conexão HTTPS verifica o certificado do servidor pelo sistema Android."
+                : "A identidade deste computador foi recebida pelo QR code. Confira o mesmo código em Conectar dispositivos no PC. Uma chave diferente será bloqueada.";
+        add(body, text(description, 14, Color.WHITE, false), 14);
+        if (pin != null && !pin.isEmpty()) {
+            TextView code = text(pin.toUpperCase(java.util.Locale.ROOT).replaceAll("(.{8})(?!$)", "$1 "), 14, GREEN, false);
+            code.setTypeface(Typeface.MONOSPACE);
+            code.setTextIsSelectable(true);
+            add(body, code, 18);
+        }
+        add(body, text("A proteção usa TLS entre este celular e o Acervo conectado. Não é o protocolo de mensagens do WhatsApp. As músicas offline continuam na área privada deste aplicativo.", 12, MUTED, false), 18);
+        new AlertDialog.Builder(this).setTitle("Proteção da conexão").setView(body)
+                .setPositiveButton("Conferido", null)
+                .setNeutralButton("Desparear", (dialog, which) -> new AlertDialog.Builder(this)
+                        .setTitle("Remover esta conexão?")
+                        .setMessage("O endereço, a identidade salva e o acesso neste celular serão removidos. Suas músicas offline continuam salvas. Para revogar o acesso também no PC, remova este celular em Dispositivos.")
+                        .setNegativeButton("Cancelar", null)
+                        .setPositiveButton("Desparear", (confirm, ignored) -> {
+                            SecureTransport.forget(this, origin);
+                            CookieManager.getInstance().setCookie(origin + "/", "acervo_connect=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict");
+                            CookieManager.getInstance().flush();
+                            preferences.edit().remove("server_origin").apply();
+                            showHome("Conexão removida. Escaneie um novo QR code para parear novamente.");
+                        }).show()).show();
     }
 
     private void createBrowser() {
@@ -224,12 +268,17 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         toolbar.addView(mark, new LinearLayout.LayoutParams(dp(34), dp(34)));
         TextView name = text("acervo", 18, Color.WHITE, true);
         toolbar.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-        Button reload = compactButton("Atualizar");
+        Button reload = compactButton("↻");
+        reload.setContentDescription("Recarregar Acervo");
         reload.setOnClickListener(v -> navigate(selectedOrigin + "/"));
         toolbar.addView(reload);
         Button sync = compactButton("Sincronizar");
         sync.setOnClickListener(v -> DeviceSync.sync(this, selectedOrigin));
         toolbar.addView(sync);
+        Button identity = compactButton("Proteção");
+        identity.setContentDescription("Verificar identidade e criptografia da conexão");
+        identity.setOnClickListener(v -> showSecurity(selectedOrigin));
+        toolbar.addView(identity);
         Button home = compactButton("Conexão");
         home.setOnClickListener(v -> showHome(null));
         toolbar.addView(home);
@@ -249,17 +298,23 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.3.2 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.4.0 Mobile");
         webView.addJavascriptInterface(new Bridge(), "AcervoAndroid");
+        secureClient = new SecureWebClient(webView, this, selectedOrigin);
+        final SecureWebClient transport = secureClient;
+        transport.attach();
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, false);
         webView.setWebChromeClient(new WebChromeClient());
         webView.setDownloadListener((url, agent, disposition, mimeType, size) -> {
             if (!PairingLink.isSameOrigin(url, selectedOrigin)) return;
-            try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
-            catch (ActivityNotFoundException ignored) { toast("Nenhum navegador disponível para baixar o arquivo."); }
+            if ("/downloads/acervo.apk".equals(Uri.parse(url).getPath())) AppUpdater.check(this, selectedOrigin);
+            else toast("Use Salvar no celular para guardar uma música na biblioteca offline.");
         });
         webView.setWebViewClient(new WebViewClient() {
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                return transport.intercept(request);
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 // A cross-origin iframe cannot become an app navigation target.
                 if (!request.isForMainFrame()) return !PairingLink.isSameOrigin(request.getUrl().toString(), selectedOrigin);
@@ -294,6 +349,11 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
                 if (request.isForMainFrame() && response.getStatusCode() >= 400) showConnectionError();
             }
 
+            @Override public void onReceivedSslError(WebView view, android.webkit.SslErrorHandler handler, android.net.http.SslError error) {
+                handler.cancel();
+                showConnectionError();
+            }
+
             @Override public boolean onRenderProcessGone(WebView view, android.webkit.RenderProcessGoneDetail detail) {
                 if (view == webView) {
                     page.removeView(view);
@@ -310,7 +370,9 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     }
 
     private boolean handleNavigation(String url, boolean userGesture) {
-        if (PairingLink.isSameOrigin(url, selectedOrigin)) return false;
+        if (PairingLink.isSameOrigin(url, selectedOrigin)) {
+            return false;
+        }
         Uri target = Uri.parse(url);
         // External links require a user tap and are handed to the user's browser.
         if (userGesture && "https".equalsIgnoreCase(target.getScheme()) && target.getHost() != null
@@ -332,6 +394,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         failed = false;
         webView.setVisibility(View.VISIBLE);
         beginLoading();
+        if (secureClient != null) secureClient.newDocument();
         webView.loadUrl(url);
     }
 
@@ -401,7 +464,9 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     }
 
     @Override public void onBackPressed() {
-        if (webView != null && connectionError == null && webView.canGoBack()) webView.goBack();
+        if (webView != null && connectionError == null && webView.canGoBack()) {
+            webView.goBack();
+        }
         else if (selectedOrigin != null) showHome(null);
         else super.onBackPressed();
     }
@@ -434,7 +499,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         try {
             String target = path.startsWith("http") ? path : selectedOrigin + path;
             String cookie = CookieManager.getInstance().getCookie(selectedOrigin);
-            HttpURLConnection connection = (HttpURLConnection) new URL(target).openConnection();
+            HttpURLConnection connection = SecureTransport.open(this, target, selectedOrigin);
             connection.setConnectTimeout(10000);
             connection.setReadTimeout(15000);
             if (cookie != null && !cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
@@ -455,10 +520,10 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         if (library.get(id) != null) return false;
         if (selectedOrigin == null) throw new IOException("Conecte-se ao Acervo antes de salvar.");
         String cookie = CookieManager.getInstance().getCookie(selectedOrigin);
-        HttpURLConnection connection = (HttpURLConnection) new URL(selectedOrigin + "/api/stream/" + id).openConnection();
+        HttpURLConnection connection = SecureTransport.open(this, selectedOrigin + "/api/stream/" + id, selectedOrigin);
         connection.setConnectTimeout(15000);
         connection.setReadTimeout(120000);
-        connection.setInstanceFollowRedirects(true);
+        connection.setInstanceFollowRedirects(false);
         connection.setRequestProperty("Accept", "audio/mpeg,audio/*");
         if (cookie != null && !cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
         int status = connection.getResponseCode();
@@ -563,6 +628,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
 
     private void disposeWebView() {
         loading = null;
+        if (secureClient != null) { secureClient.dispose(); secureClient = null; }
         if (webView == null) return;
         webView.stopLoading();
         if (webView.getParent() instanceof ViewGroup) ((ViewGroup) webView.getParent()).removeView(webView);

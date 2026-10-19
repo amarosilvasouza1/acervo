@@ -4,14 +4,18 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
 
-/** Accepts a secure server origin, or an unencrypted literal LAN address; never resolves DNS. */
+/** Parses QR boundaries without DNS. Legacy HTTP links are parsed only for a migration message. */
 public final class PairingLink {
     public final String origin;
     public final String url;
+    public final String spkiPin;
+    public final String pairToken;
 
-    private PairingLink(String origin, String url) {
+    private PairingLink(String origin, String url, String token, String pin) {
         this.origin = origin;
         this.url = url;
+        this.pairToken = token;
+        this.spkiPin = pin;
     }
 
     public static PairingLink parse(String text) {
@@ -28,8 +32,20 @@ public final class PairingLink {
             String path = uri.getRawPath();
             if (path != null && !path.isEmpty() && !"/".equals(path)) throw invalid();
             String fragment = uri.getRawFragment();
-            if (fragment != null && !fragment.matches("pair=[A-Za-z0-9_-]{16,256}")) throw invalid();
-            return new PairingLink(origin, origin + "/" + (fragment == null ? "" : "#" + fragment));
+            String token = null, pin = null;
+            if (fragment != null) {
+                String[] fields = fragment.split("&", -1);
+                if (fields.length > 2) throw invalid();
+                for (String field : fields) {
+                    if (field.matches("pair=[A-Za-z0-9_-]{16,256}") && token == null) token = field.substring(5);
+                    else if (field.matches("spki=[a-fA-F0-9]{64}") && pin == null) pin = field.substring(5).toLowerCase(Locale.US);
+                    else throw invalid();
+                }
+                if (token == null) throw invalid();
+                if (pin != null && (!origin.startsWith("https://") || !isPrivateIPv4(uri.getHost()))) throw invalid();
+            }
+            String normalized = token == null ? "" : "#pair=" + token + (pin == null ? "" : "&spki=" + pin);
+            return new PairingLink(origin, origin + "/" + normalized, token, pin);
         } catch (URISyntaxException ex) {
             throw invalid();
         }
@@ -102,6 +118,6 @@ public final class PairingLink {
     }
 
     private static IllegalArgumentException invalid() {
-        return new IllegalArgumentException("Use o link do QR code, o endereço HTTPS do seu Acervo na nuvem ou um endereço local como http://192.168.1.10:4310. Links locais precisam do computador ligado na mesma rede.");
+        return new IllegalArgumentException("Use o novo QR code seguro do Acervo ou o endereço HTTPS do seu servidor. O QR local deve conter a identidade criptográfica do computador.");
     }
 }

@@ -45,6 +45,7 @@ public final class QrBoundaryTest {
             reader.reset();
             if (!expected.equals(decoded)) throw new AssertionError("QR changed across Node/Java boundary at rotation " + rotation);
             PairingLink link = PairingLink.parse(decoded);
+            if (!link.origin.startsWith("https://") || link.spkiPin == null || link.spkiPin.length() != 64) throw new AssertionError("Secure QR lost the PC identity");
             if (!decoded.equals(link.url)) throw new AssertionError("Scanner rejected or changed real QR fragment");
             if (link.origin.contains("pair=") || link.origin.contains("#")) throw new AssertionError("One-use code leaked into saved origin");
             byte[] rotated = new byte[luminance.length];

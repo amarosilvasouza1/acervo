@@ -12,6 +12,8 @@ $updaterAndroidJar = Join-Path $SdkRoot 'platforms/android-35/android.jar'
 $updaterJavaRoot = Join-Path $updaterRoot 'android/app/src/main/java/br/com/acervo/app'
 & (Join-Path $JavaHome 'bin/javac.exe') --release 8 -encoding UTF-8 -classpath $updaterAndroidJar -d $updaterOutput `
     (Join-Path $updaterJavaRoot 'PairingLink.java') `
+    (Join-Path $updaterJavaRoot 'PinnedTls.java') `
+    (Join-Path $updaterJavaRoot 'SecureTransport.java') `
     (Join-Path $updaterJavaRoot 'ApkProvider.java') `
     (Join-Path $updaterJavaRoot 'UpdateSource.java') `
     (Join-Path $updaterJavaRoot 'AppUpdater.java') `
