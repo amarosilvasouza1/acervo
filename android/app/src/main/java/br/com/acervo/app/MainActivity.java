@@ -18,6 +18,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -47,6 +48,8 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -54,6 +57,8 @@ import java.net.URL;
 public final class MainActivity extends Activity implements PlaybackService.Controls {
     public static final String EXTRA_SHOW_CONNECTIONS = "br.com.acervo.app.SHOW_CONNECTIONS";
     private static final int SCAN_REQUEST = 20;
+    private static final int PLAYLIST_FILE_REQUEST = 21;
+    private String playlistDocumentKey;
     private static final int BG = Color.BLACK;
     private static final int CARD = Color.rgb(31, 31, 31);
     private static final int GREEN = Color.rgb(30, 215, 96);
@@ -71,6 +76,10 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     private boolean showingConnections;
     private boolean askedNotifications;
     private boolean offlineOpened;
+    private long playbackPositionMs;
+    private long playbackDurationMs;
+    private long playbackPositionAt;
+    private boolean playbackPlaying;
     private Bitmap lastCover;
     private String lastCoverUrl;
     private String coverRequest;
@@ -521,6 +530,27 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PLAYLIST_FILE_REQUEST) {
+            final String key = playlistDocumentKey;
+            playlistDocumentKey = null;
+            final Uri uri = data == null ? null : data.getData();
+            if (resultCode != RESULT_OK || uri == null || !"content".equals(uri.getScheme())) {
+                deliverPlaylistFile(key, null, "Seleção de arquivo cancelada."); return;
+            }
+            new Thread(() -> {
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IOException("Não foi possível abrir o arquivo.");
+                    ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[16384]; int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        if (bytes.size() + count > 1500000) throw new IOException("Use um arquivo de até 1,5 MB.");
+                        bytes.write(buffer, 0, count);
+                    }
+                    deliverPlaylistFile(key, new String(bytes.toByteArray(), StandardCharsets.UTF_8), null);
+                } catch (Exception failure) { deliverPlaylistFile(key, null, "Não foi possível ler o arquivo. Use CSV/JSON de até 1,5 MB."); }
+            }, "AcervoPlaylistFile").start();
+            return;
+        }
         if (requestCode != SCAN_REQUEST || resultCode != RESULT_OK || data == null) return;
         try { connect(PairingLink.parse(data.getStringExtra("pairing_url"))); }
         catch (IllegalArgumentException error) { showConnections(error.getMessage()); }
@@ -557,6 +587,17 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     @Override public void onNext() { js("AC.next(false)"); }
     @Override public void onPrevious() { js("AC.prev()"); }
     @Override public void onClose() { js("if (AC.state.playing) AC.toggle();"); }
+    @Override public Class<?> playerActivity() { return MainActivity.class; }
+    @Override public long positionMs() {
+        long value = playbackPositionMs;
+        if (playbackPlaying) value += Math.max(0, SystemClock.elapsedRealtime() - playbackPositionAt);
+        return playbackDurationMs > 0 ? Math.min(value, playbackDurationMs) : value;
+    }
+    @Override public long durationMs() { return playbackDurationMs; }
+    @Override public void onSeek(long position) {
+        double ratio = playbackDurationMs > 0 ? (double) Math.max(0, Math.min(position, playbackDurationMs)) / playbackDurationMs : 0;
+        js("AC.seekRatio(" + ratio + ")");
+    }
 
     private Bitmap fetchCover(String path) {
         try {
@@ -639,6 +680,19 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
     }
 
     private final class Bridge {
+        @JavascriptInterface public void choosePlaylistFile(final String documentKey) {
+            runOnUiThread(() -> {
+                if (webView == null || secureClient == null || !secureClient.isActiveDocument(documentKey)
+                        || !PairingLink.isSameOrigin(webView.getUrl(), selectedOrigin)) return;
+                if (playlistDocumentKey != null) { deliverPlaylistFile(documentKey, null, "Já há uma seleção de arquivo aberta."); return; }
+                playlistDocumentKey = documentKey;
+                Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE)
+                        .putExtra(Intent.EXTRA_MIME_TYPES, new String[] { "text/csv", "text/comma-separated-values", "application/json", "text/plain", "application/octet-stream" })
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try { startActivityForResult(intent, PLAYLIST_FILE_REQUEST); }
+                catch (ActivityNotFoundException failure) { playlistDocumentKey = null; deliverPlaylistFile(documentKey, null, "Nenhum seletor de arquivos disponível."); }
+            });
+        }
         @JavascriptInterface public void connectedConfirmed(final String origin, final String documentKey) {
             runOnUiThread(() -> {
                 if (webView == null || secureClient == null || !secureClient.isActiveDocument(documentKey)
@@ -691,6 +745,14 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
             nowPlaying(title, artist, playing, null);
         }
 
+        @JavascriptInterface public void playbackProgress(int positionMs, int durationMs, boolean playing) {
+            playbackPositionMs = Math.max(0, positionMs);
+            playbackDurationMs = Math.max(0, durationMs);
+            playbackPlaying = playing;
+            playbackPositionAt = SystemClock.elapsedRealtime();
+            PlaybackService.progress(playbackPositionMs, playbackDurationMs);
+        }
+
         @JavascriptInterface public void nowPlaying(final String title, final String artist, final boolean playing, final String coverUrl) {
             runOnUiThread(() -> {
                 if (playing && !askedNotifications && Build.VERSION.SDK_INT >= 33
@@ -699,14 +761,14 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
                     requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
                 }
                 if (coverUrl == null || coverUrl.isEmpty()) {
-                    PlaybackService.update(MainActivity.this, title, artist, playing, null);
+                    PlaybackService.update(MainActivity.this, title, artist, playing, null, positionMs(), durationMs());
                     return;
                 }
                 if (coverUrl.equals(lastCoverUrl) && lastCover != null) {
-                    PlaybackService.update(MainActivity.this, title, artist, playing, lastCover);
+                    PlaybackService.update(MainActivity.this, title, artist, playing, lastCover, positionMs(), durationMs());
                     return;
                 }
-                PlaybackService.update(MainActivity.this, title, artist, playing, lastCover);
+                PlaybackService.update(MainActivity.this, title, artist, playing, lastCover, positionMs(), durationMs());
                 coverRequest = coverUrl;
                 new Thread(() -> {
                     Bitmap loaded = fetchCover(coverUrl);
@@ -714,7 +776,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
                         if (!coverUrl.equals(coverRequest)) return;
                         lastCoverUrl = coverUrl;
                         lastCover = loaded;
-                        PlaybackService.update(MainActivity.this, title, artist, playing, loaded);
+                        PlaybackService.update(MainActivity.this, title, artist, playing, loaded, positionMs(), durationMs());
                     });
                 }).start();
             });
@@ -723,6 +785,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
 
     private void disposeWebView() {
         loading = null;
+        playlistDocumentKey = null;
         if (secureClient != null) { secureClient.dispose(); secureClient = null; }
         if (webView == null) return;
         webView.stopLoading();
@@ -731,6 +794,18 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         webView.setWebViewClient(new WebViewClient());
         webView.destroy();
         webView = null;
+    }
+
+    private void deliverPlaylistFile(String key, String text, String error) {
+        runOnUiThread(() -> {
+            if (webView == null || secureClient == null || !secureClient.isActiveDocument(key)
+                    || !PairingLink.isSameOrigin(webView.getUrl(), selectedOrigin)) return;
+            try {
+                JSONObject result = new JSONObject().put("key", key);
+                if (error != null) result.put("error", error); else result.put("text", text);
+                webView.evaluateJavascript("window.__acervoPlaylistFile && window.__acervoPlaylistFile(" + result.toString() + ");", null);
+            } catch (Exception ignored) { }
+        });
     }
 
     private void cancelTimeout() {

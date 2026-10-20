@@ -1,18 +1,9 @@
-Acervo Android 1.4.0
+Acervo Android 1.5.5
 
-- Visual nativo com Início, Buscar, Biblioteca e Rádio, mini player e player expandido, inclusive offline.
-- Recentes, downloads e perfis de artistas com dados locais; capas carregadas ficam disponíveis sem internet.
-- Conexão PC/celular por HTTPS/TLS com identidade verificada pelo QR, incluindo áudio, rádio, biblioteca, controles e sincronização.
-- Proteção permite comparar o código de identidade e desparear. Mudanças de chave são recusadas.
-- Atualize também o PC e leia um novo QR pelo APK para migrar conexões locais por HTTP. A assinatura original foi mantida: instale por cima para preservar as músicas.
-
-A proteção usa TLS com identidade pareada, sem implementar o protocolo do WhatsApp. Fontes em acervo-1.4.0-source.zip.
-
-Histórico 1.3.6:
-
-- A versao Web agora abre o aplicativo responsivo real em /web; /web.html redireciona para /web. A mesma interface se adapta a PC e celular.
-- Atualizacao do aplicativo: fonte de release configuravel (servidor Acervo ou GitHub, quando o repositorio for definido), com verificacao de assinatura antes de instalar.
-- Sincronizar copia os MP3 que ja estao no PC direto para o celular, sem baixar do YouTube de novo; musicas que so existem no celular sao enviadas ao PC.
-- Notificacao de reproducao com capa e controles, configuracoes de download/offline, playlists do YouTube e biblioteca offline no celular.
+- Notificacao de reproducao com linha do tempo real, duracao e busca; os controles de play/pause, anterior e proxima continuam na sombra.
+- Tocar na notificacao abre a tela que esta tocando: o player nativo quando a musica esta no celular, ou o WebView conectado quando a reproducao vem do PC.
+- Player em segundo plano atualiza a MediaSession a cada segundo e preserva a posicao ao pausar, retomar ou buscar.
+- Importacao de playlists do Spotify por link publico, do YouTube ou por arquivo CSV/JSON, com previa, correspondencia no YouTube e relatorio de falhas.
+- Melhorias de conexao HTTPS, encaminhador Bore e desempenho do APK.
 
 Android 8 ou superior. Pode instalar por cima da versao anterior: a assinatura foi mantida. Fontes completos em android/ neste repositorio. Acervo e independente, sem vinculo ou endosso do Team NewPipe.

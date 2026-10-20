@@ -21,6 +21,7 @@ import { resolveTrackMetadata } from './lib/track-metadata.js';
 import { createInternetRelay } from './lib/internet-relay.js';
 import { createBoreRelay } from './lib/bore-relay.js';
 import { acquireServerInstance } from './lib/server-instance.js';
+import { createPlaylistImports } from './lib/playlist-imports.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -29,7 +30,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 15, versionName: '1.5.4' };
+const ANDROID_VERSION = { versionCode: 16, versionName: '1.5.5' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -81,11 +82,14 @@ const MIME = {
 };
 
 const jobs = new Map();
+const jobWaiters = new Map();
 const queue = [];
 let running = false;
 const activeByVideo = new Map();
 const searchCache = new Map();
 const discoverCache = new Map();
+const playlistImports = createPlaylistImports({ store: Playlists, youtubeInfo: playlistInfo, search: searchYouTube,
+  enqueue: enqueueImport, waitForJob: waitForJob, getJob: id => jobs.get(id), getTracks: Library.all });
 
 for (const dir of [DATA, TRACKS, COVERS, TMP, TRASH]) {
   await mkdir(dir, { recursive: true }).catch(function () {});
@@ -155,9 +159,21 @@ async function fetchCover(videoId, url) {
 
 function bumpJob(job, patch) {
   Object.assign(job, patch, { updatedAt: Date.now() });
+  if (job.status === 'done' || job.status === 'error') {
+    for (const resolve of jobWaiters.get(job.id) || []) resolve(job);
+    jobWaiters.delete(job.id);
+  }
 }
 
-function enqueueImport(input) {
+function waitForJob(job) {
+  if (job.status === 'done' || job.status === 'error') return Promise.resolve(job);
+  return new Promise(resolve => {
+    if (!jobWaiters.has(job.id)) jobWaiters.set(job.id, []);
+    jobWaiters.get(job.id).push(resolve);
+  });
+}
+
+function enqueueImport(input, options = {}) {
   validateImportInput(input);
   const job = {
     id: crypto.randomUUID(),
@@ -166,6 +182,7 @@ function enqueueImport(input) {
     progress: 0,
     message: 'Aguardando na fila',
     input: input,
+    catalogMetadata: options.catalogMetadata || null,
     videoId: input.videoId || null,
     trackId: null,
     error: null,
@@ -223,6 +240,11 @@ async function processImport(job) {
   let info = null;
   try { info = await videoInfo(videoId); } catch (e) { info = null; }
   const metadata = resolveTrackMetadata(info, meta);
+  if (job.catalogMetadata) {
+    metadata.title = job.catalogMetadata.title;
+    metadata.artist = job.catalogMetadata.artist;
+    if (job.catalogMetadata.album) metadata.album = job.catalogMetadata.album;
+  }
   const { title, artist, duration, genre, album, year, tags } = metadata;
   const thumb = pickThumb({ id: videoId, thumbnails: [
     ...(Array.isArray(info?.thumbnails) ? info.thumbnails : []),
@@ -550,7 +572,7 @@ async function handleRequest(req, res) {
     if (req.method === 'POST' && pathname === '/api/playlist/resolve') {
       const body = await readBody(req);
       try {
-        return sendJson(res, 200, await playlistInfo(body.url));
+        return sendJson(res, 200, await playlistImports.preview(body));
       } catch (error) {
         return sendJson(res, 422, { error: String(error.message || error) });
       }
@@ -567,33 +589,21 @@ async function handleRequest(req, res) {
     if (req.method === 'POST' && pathname === '/api/playlists/import') {
       const body = await readBody(req);
       try {
-        const info = await playlistInfo(body.url);
-        const playlist = await Playlists.create({ name: body.name || info.title, sourceUrl: body.url, entries: info.entries });
-        const jobs = playlist.entries.map(function (entry) {
-          return enqueueImport({ videoId: entry.videoId, meta: {
-            title: entry.title, channel: entry.artist, duration: entry.duration,
-            thumbnails: entry.thumbnail ? [{ url: entry.thumbnail }] : []
-          } }).id;
-        });
-        return sendJson(res, 202, { playlist: playlist, jobs: jobs, total: info.total, truncated: info.truncated });
+        return sendJson(res, 202, await playlistImports.importList(body));
       } catch (error) {
         return sendJson(res, 422, { error: String(error.message || error) });
       }
     }
     if (req.method === 'POST' && pathname.startsWith('/api/playlists/') && pathname.endsWith('/import')) {
-      const id = pathname.split('/')[3];
-      const playlist = await Playlists.get(id);
-      if (!playlist) return sendJson(res, 404, { error: 'Playlist nao encontrada.' });
-      const jobs = playlist.entries.map(function (entry) {
-        return enqueueImport({ videoId: entry.videoId, meta: {
-          title: entry.title, channel: entry.artist, duration: entry.duration,
-          thumbnails: entry.thumbnail ? [{ url: entry.thumbnail }] : []
-        } }).id;
-      });
-      return sendJson(res, 202, { jobs: jobs, total: jobs.length });
+      try { return sendJson(res, 202, await playlistImports.start(pathname.split('/')[3])); }
+      catch (error) { return sendJson(res, error.statusCode || 422, { error: String(error.message || error) }); }
+    }
+    if (req.method === 'GET' && /^\/api\/playlists\/[^/]+\/report$/.test(pathname)) {
+      try { return sendJson(res, 200, await playlistImports.report(pathname.split('/')[3])); }
+      catch (error) { return sendJson(res, error.statusCode || 422, { error: String(error.message || error) }); }
     }
     if (req.method === 'GET' && pathname === '/api/playlists') {
-      return sendJson(res, 200, { playlists: await Playlists.all() });
+      return sendJson(res, 200, { playlists: await playlistImports.all() });
     }
     if (req.method === 'DELETE' && pathname.startsWith('/api/playlists/')) {
       const id = pathname.split('/').pop();

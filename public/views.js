@@ -384,30 +384,31 @@
 
   /* ---------------- playlists e configurações ---------------- */
   function isPlaylistUrl(value) {
-    return /[?&]list=/.test(value) || /\/playlist(\?|$)/.test(value);
+    return /[?&]list=/.test(value) || /\/playlist(?:[/?]|$)/.test(value) || /^spotify:playlist:/i.test(value);
   }
 
   function trackForEntry(entry) {
-    return S.tracks.find(function (t) { return t.videoId === entry.videoId || t.id === entry.videoId; });
+    return S.tracks.find(function (t) { return !!((entry.videoId && (t.videoId === entry.videoId || t.id === entry.videoId)) || (entry.trackId && t.id === entry.trackId)); });
   }
 
   function viewPlaylists() {
     var list = S.playlists || [];
-    var head = '<div class="view-head"><div><h1>Playlists</h1><p class="sub">Cole um link de playlist do YouTube para baixar tudo e guardar aqui.</p></div>' +
+    var head = '<div class="view-head"><div><h1>Playlists</h1><p class="sub">Traga suas playlists do Spotify ou YouTube e acompanhe cada música.</p></div>' +
       '<div class="head-actions"><button class="btn btn-accent btn-sm" data-action="open-download">' + icon('link', 15) + ' Importar playlist</button></div></div>';
     if (!list.length) {
       return '<div class="view">' + head +
         '<div class="empty"><div class="empty-mark">' + icon('queue', 24) + '</div><h2>Suas playlists ficam aqui</h2>' +
-        '<p>Cole o link de uma playlist do YouTube. O Acervo baixa as faixas em sequência e mantém a lista para tocar depois.</p>' +
+        '<p>Cole um link público do Spotify ou YouTube, ou importe um arquivo CSV/JSON. Confira a lista antes de começar e veja quais músicas não puderam ser baixadas.</p>' +
         '<div class="playlist-steps"><span>1. Cole o link</span><span>2. O Acervo baixa</span><span>3. Toque quando quiser</span></div>' +
         '<button class="btn btn-accent" data-action="open-download">Importar uma playlist</button></div></div>';
     }
     var cards = list.map(function (p) {
       var done = p.entries.filter(function (entry) { return !!trackForEntry(entry); }).length;
-      var first = p.entries[0];
+      var first = p.entries.find(function (entry) { return !!entry.thumbnail; });
+      var failed = p.entries.filter(function (entry) { return entry.status === 'error'; }).length;
       return '<article class="card playlist-card" role="button" tabindex="0" data-action="open-playlist" data-id="' + esc(p.id) + '">' +
         '<div class="card-cover">' + (first ? '<img src="' + esc(first.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '<span class="card-cover-fallback"></span>') + '</div>' +
-        '<div><div class="card-title">' + esc(p.name) + '</div><div class="tiny">' + done + ' de ' + p.entries.length + ' no acervo</div></div></article>';
+        '<div><div class="card-title">' + esc(p.name) + '</div><div class="tiny">' + done + ' de ' + p.entries.length + ' no acervo' + (failed ? ' · ' + failed + ' com falha' : '') + '</div></div></article>';
     }).join('');
     return '<div class="view">' + head + '<div class="grid">' + cards + '</div></div>';
   }
@@ -418,19 +419,34 @@
       return '<div class="view"><div class="empty"><h2>Playlist não encontrada</h2><button class="btn btn-ghost" data-action="nav" data-view="playlists">Voltar</button></div></div>';
     }
     var done = p.entries.filter(function (entry) { return !!trackForEntry(entry); }).length;
+    var failed = p.entries.filter(function (entry) { return entry.status === 'error' && !trackForEntry(entry); }).length;
+    var active = p.entries.filter(function (entry) { return ['queued', 'matching', 'working'].indexOf(entry.status) !== -1; }).length;
     var rows = p.entries.map(function (entry, index) {
+      if (S.playlistOnlyFailed && (entry.status !== 'error' || trackForEntry(entry))) return '';
       var track = trackForEntry(entry);
       if (track) return rowHtml(track, index);
+      var error = entry.status === 'error';
+      var label = error ? 'Não baixada' : entry.status === 'matching' ? 'Procurando versão' : entry.status === 'working'
+        ? (entry.stage || 'Baixando') + (entry.progress > 0 ? ' · ' + entry.progress + '%' : '') : entry.status === 'queued' ? 'Na fila' : 'Pendente';
       return '<div class="row"><span class="idx">' + (index + 1) + '</span>' +
-        '<span class="row-main"><span class="row-cover"><img src="' + esc(entry.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer"></span>' +
-        '<span style="min-width:0"><span class="row-title">' + esc(entry.title) + '</span><span class="row-artist">' + esc(entry.artist || '') + '</span></span></span>' +
-        '<span class="row-end"><span class="pill">Na fila</span></span></div>';
+        '<span class="row-main"><span class="row-cover">' + (entry.thumbnail ? '<img src="' + esc(entry.thumbnail) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : icon('music', 20)) + '</span>' +
+        '<span style="min-width:0"><span class="row-title">' + esc(entry.title) + '</span><span class="row-artist">' + esc(entry.artist || '') + '</span>' +
+        (error ? '<span class="playlist-error">' + esc(entry.error || 'Não foi possível baixar esta música.') + '</span>' : '') + '</span></span>' +
+        '<span class="row-end"><span class="pill' + (error ? ' playlist-failed' : '') + '">' + esc(label) + '</span>' +
+        (error && entry.errorCode !== 'unsupported' ? '<button class="icon-btn" data-action="playlist-search" data-query="' + esc(entry.title + ' ' + entry.artist) + '" aria-label="Buscar outra versão de ' + esc(entry.title) + '">' + icon('search', 16) + '</button>' : '') + '</span></div>';
     }).join('');
+    var source = /^https:\/\/open\.spotify\.com\/playlist\/[A-Za-z0-9]{22}$/.test(p.sourceUrl || '')
+      ? '<a class="link" href="' + esc(p.sourceUrl) + '" target="_blank" rel="noopener noreferrer">Ver playlist no Spotify ↗</a>' : '';
+    var warnings = (p.warnings || []).map(function (message) { return '<p class="playlist-warning">' + esc(message) + '</p>'; }).join('');
     return '<div class="view"><div class="view-head"><div><button class="link" data-action="nav" data-view="playlists">← Playlists</button><h1>' + esc(p.name) + '</h1>' +
-      '<p class="sub">' + done + ' de ' + p.entries.length + ' já no acervo</p></div>' +
+      '<p class="sub" role="status">' + done + ' de ' + p.entries.length + ' já no acervo' + (failed ? ' · ' + failed + ' não baixadas' : '') + (active ? ' · importando' : '') + '</p>' + source + '</div>' +
       '<div class="head-actions"><button class="btn btn-ghost btn-sm" data-action="refresh-playlist">' + icon('repeat', 14) + ' Atualizar</button>' +
-      '<button class="btn btn-accent btn-sm" data-action="import-playlist-all" data-id="' + esc(p.id) + '">' + icon('download', 14) + ' Baixar todas</button></div></div>' +
-      '<div class="rows">' + rows + '</div></div>';
+      '<button class="btn btn-ghost btn-sm" data-action="playlist-report" data-id="' + esc(p.id) + '">Relatório</button>' +
+      '<button class="btn btn-accent btn-sm" data-action="import-playlist-all" data-id="' + esc(p.id) + '">' + icon('download', 14) + ' Tentar pendentes</button></div></div>' +
+      warnings + (p.provider === 'spotify' ? '<p class="tiny playlist-source-note">Títulos e artistas vieram do Spotify. O áudio é procurado no YouTube; uma versão diferente pode estar disponível.</p>' : '') +
+      '<div class="home-filters playlist-filters"><button class="filter-chip' + (!S.playlistOnlyFailed ? ' is-active' : '') + '" data-action="playlist-filter" data-failed="false">Todas</button>' +
+      '<button class="filter-chip' + (S.playlistOnlyFailed ? ' is-active' : '') + '" data-action="playlist-filter" data-failed="true">Não baixadas (' + failed + ')</button></div>' +
+      '<div class="rows playlist-rows">' + (rows || '<p class="empty">Nenhuma música com falha nesta playlist.</p>') + '</div></div>';
   }
 
   function settingRow(key, title, description) {
@@ -466,12 +482,22 @@
   /* ---------------- download modal ---------------- */
   function openDownload() {
     AC.openModal(
-      '<div class="modal-head"><div><h2>Baixar do YouTube</h2><p>Cole o link do vídeo ou digite o nome da música. O áudio vira MP3, entra no acervo com capa e é normalizado em −14 LUFS.</p></div>' +
+      '<div class="modal-head"><div><h2>Adicionar músicas</h2><p>Cole uma playlist do Spotify ou YouTube, um vídeo ou o nome de uma música.</p></div>' +
       '<button class="icon-btn modal-close" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' +
-      '<div class="modal-field">' + icon('link', 18) + '<input id="dl-input" placeholder="https://youtube.com/watch?v=... ou nome da música" autocomplete="off"></div>' +
-      '<p class="modal-hint">Cole também um link de playlist: o Acervo cria a playlist e baixa todas as faixas em sequência. Use apenas conteúdo que você tem direito de baixar.</p>' +
+      '<div class="modal-field">' + icon('link', 18) + '<input id="dl-input" aria-label="Link da playlist ou música" placeholder="Link do Spotify, YouTube ou nome da música" autocomplete="off"></div>' +
+      '<p class="modal-hint">Playlists passam por uma prévia. Você acompanha as músicas baixadas e as falhas. O link público do Spotify pode mostrar só parte da lista.</p>' +
+      (window.AcervoAndroid ? '<button class="btn btn-ghost playlist-file-button" data-action="playlist-file-native">Importar lista completa por arquivo</button>' : '<label class="playlist-file-label">Importar lista completa por arquivo <input id="playlist-file" type="file" accept=".csv,.json,text/csv,application/json"></label>') +
+      '<p class="tiny">CSV: colunas Track Name e Artist Name(s), ou Título e Artista. JSON: arquivo de playlists dos seus dados do Spotify. Até 1000 músicas e 1,5 MB.</p>' +
       '<div class="modal-actions"><button class="btn btn-quiet" data-action="close-modal">Cancelar</button><button class="btn btn-accent" data-action="download-submit">' + icon('download', 16) + ' Baixar</button></div>'
     );
+    var file = $('playlist-file');
+    if (file) file.addEventListener('change', async function () {
+      var selected = file.files && file.files[0];
+      if (!selected) return;
+      if (selected.size > 1500000) { AC.toast('Use um arquivo de até 1,5 MB.', 'error'); return; }
+      try { await previewPlaylist({ fileText: await selected.text(), name: selected.name.replace(/\.(csv|json)$/i, '') }); }
+      catch (error) { AC.toast(error.message, 'error'); }
+    });
     setTimeout(function () { var i = $('dl-input'); if (i) i.focus(); }, 40);
   }
 
@@ -480,8 +506,7 @@
     var value = input ? input.value.trim() : '';
     if (!value) return;
     if (isPlaylistUrl(value)) {
-      AC.closeModals();
-      AC.importPlaylist(value);
+      try { await previewPlaylist({ url: value }); } catch (error) { AC.toast(error.message, 'error'); }
       return;
     }
     var isLink = /youtu\.?be|youtube\.com/i.test(value);
@@ -493,6 +518,40 @@
     } else {
       await doSearch(value);
     }
+  }
+
+  var previewPayload = null;
+  var playlistImporting = false;
+  async function previewPlaylist(payload) {
+    AC.toast('Lendo a playlist…');
+    var data = await AC.api('/api/playlist/resolve', { method: 'POST', body: JSON.stringify(payload) });
+    previewPayload = payload;
+    if (data.choices) {
+      AC.openModal('<div class="modal-head"><h2>Escolha uma playlist</h2><button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' +
+        '<label class="playlist-file-label">Playlist do arquivo<select id="playlist-file-choice">' + data.choices.map(function (item) {
+          return '<option value="' + item.index + '">' + esc(item.name) + ' · ' + item.count + ' músicas</option>';
+        }).join('') + '</select></label><div class="modal-actions"><button class="btn btn-accent" data-action="playlist-file-choice">Ver prévia</button></div>');
+      return;
+    }
+    S.playlistPreview = data;
+    var warnings = (data.warnings || []).map(function (warning) { return '<p class="playlist-warning">' + esc(warning) + '</p>'; }).join('');
+    var sample = data.entries.slice(0, 5).map(function (entry) { return '<li><strong>' + esc(entry.title) + '</strong><span>' + esc(entry.artist) + '</span></li>'; }).join('');
+    AC.openModal('<div class="modal-head"><div><h2>' + esc(data.title) + '</h2><p>' + data.entries.length + ' entradas lidas' + (data.total !== null && data.total !== undefined ? ' de ' + data.total : '') + '</p></div>' +
+      '<button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' + warnings +
+      '<p class="modal-hint">' + (data.provider === 'spotify' ? 'Vamos buscar versões correspondentes no YouTube e manter os títulos e artistas desta lista. ' : '') + 'Cada música terá seu resultado e motivo em caso de falha.</p>' +
+      '<ol class="playlist-preview">' + sample + '</ol>' + (data.entries.length > 5 ? '<p class="tiny">E mais ' + (data.entries.length - 5) + ' entradas.</p>' : '') +
+      '<div class="modal-actions"><button class="btn btn-quiet" data-action="open-download">Voltar</button><button class="btn btn-accent" data-action="playlist-preview-import">Importar ' + data.entries.length + ' entradas</button></div>');
+  }
+
+  async function playlistReport(id) {
+    try {
+      var data = await AC.api('/api/playlists/' + encodeURIComponent(id) + '/report');
+      var lines = [data.name, 'Baixadas: ' + data.summary.done + ' · Não baixadas: ' + data.summary.failed + ' · Em andamento: ' + data.summary.active].concat(data.warnings || []);
+      data.entries.forEach(function (entry) { lines.push(entry.position + '. ' + entry.title + ' — ' + entry.artist + ' · ' + ({ done: 'No acervo', error: 'Não baixada', pending: 'Pendente', queued: 'Na fila', matching: 'Procurando versão', working: 'Baixando' }[entry.status] || entry.status) + (entry.reason ? '\n   Motivo: ' + entry.reason : '')); });
+      AC.openModal('<div class="modal-head"><h2>Relatório da importação</h2><button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' +
+        '<p class="modal-hint">O resultado fica guardado na playlist. Selecione o texto para copiar.</p><textarea id="playlist-report-text" class="playlist-report" readonly aria-label="Resultado de cada música">' + esc(lines.join('\n')) + '</textarea>' +
+        '<div class="modal-actions"><button class="btn btn-accent" data-action="playlist-report-select">Selecionar relatório</button></div>');
+    } catch (error) { AC.toast(error.message, 'error'); }
   }
 
   /* ---------------- delete ---------------- */
@@ -590,7 +649,21 @@
         return;
       }
       case 'open-track': openTrack(id); return;
-      case 'open-playlist': S.playlistId = id; S.view = 'playlist'; render(); return;
+      case 'open-playlist': S.playlistId = id; S.playlistOnlyFailed = false; S.view = 'playlist'; render(); return;
+      case 'playlist-filter': S.playlistOnlyFailed = el.getAttribute('data-failed') === 'true'; render(); return;
+      case 'playlist-search': doSearch(el.getAttribute('data-query')); return;
+      case 'playlist-report': playlistReport(id); return;
+      case 'playlist-file-native':
+        if (typeof window.__acervoChoosePlaylistFile !== 'function') { AC.toast('Atualize o APK para importar arquivos ou use o navegador.', 'error'); return; }
+        window.__acervoChoosePlaylistFile().then(function (text) { return previewPlaylist({ fileText: text }); }).catch(function (error) { AC.toast(error.message, 'error'); }); return;
+      case 'playlist-report-select': { var report = $('playlist-report-text'); if (report) { report.focus(); report.select(); } return; }
+      case 'playlist-file-choice':
+        previewPlaylist(Object.assign({}, previewPayload, { playlistIndex: Number($('playlist-file-choice').value) })).catch(function (error) { AC.toast(error.message, 'error'); }); return;
+      case 'playlist-preview-import':
+        if (playlistImporting || !S.playlistPreview) return;
+        playlistImporting = true; el.disabled = true;
+        AC.importPlaylist({ previewId: S.playlistPreview.previewId }).then(function () { S.playlistPreview = null; AC.closeModals(); })
+          .catch(function () {}).finally(function () { playlistImporting = false; el.disabled = false; }); return;
       case 'refresh-playlist':
         (async function () {
           await AC.loadPlaylists();
@@ -699,6 +772,7 @@
   };
 
   var playlistTimer = null;
+  var playlistPolling = false;
 
   function render() { AC.render(); }
 
@@ -742,13 +816,16 @@
     if (S.view === 'radio') AC.bindRadio();
     if (S.view === 'explore' && AC.mountExplore) AC.mountExplore(S.exploreSection || 'recommended');
     if (S.view === 'artist' && AC.mountArtist) AC.mountArtist(S.artistName);
-    if (S.view === 'playlist') {
+    var activePlaylist = S.view === 'playlist' && (S.playlists || []).find(function (item) { return item.id === S.playlistId; });
+    if (activePlaylist && activePlaylist.entries.some(function (entry) { return ['queued', 'matching', 'working'].indexOf(entry.status) !== -1; })) {
       if (!playlistTimer) {
         playlistTimer = setInterval(function () {
+          if (playlistPolling || document.visibilityState === 'hidden') return;
+          playlistPolling = true;
           AC.loadPlaylists().then(function () { return AC.loadLibrary({ silent: true }); }).then(function () {
             if (S.view === 'playlist') render();
-          }).catch(function () {});
-        }, 8000);
+          }).catch(function () {}).finally(function () { playlistPolling = false; });
+        }, 4000);
       }
     } else if (playlistTimer) {
       clearInterval(playlistTimer);

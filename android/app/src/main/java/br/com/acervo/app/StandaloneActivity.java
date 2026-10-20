@@ -1219,7 +1219,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             expandedCover.setImageResource(R.drawable.ic_acervo);
             loadCover(expandedCover, track.thumbnail);
         }
-        PlaybackService.update(this, track.title, track.artist, false);
+        PlaybackService.update(this, track.title, track.artist, false, null, 0, Math.max(0, track.duration * 1000L));
         setIcon(playButton, "play", Color.WHITE);
         playButton.setEnabled(false);
         if (expandedPlay != null) expandedPlay.setEnabled(false);
@@ -1369,7 +1369,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 91);
         }
         PlaybackService.update(this, playingTrack == null ? "Acervo" : playingTrack.title,
-                playingTrack == null ? "" : playingTrack.artist, true);
+                playingTrack == null ? "" : playingTrack.artist, true, null, positionMs(), durationMs());
         prefetchNextRadio();
         updatePlayer();
     }
@@ -1377,7 +1377,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private void pause() {
         if (player != null && !preparing) try { player.pause(); updatePlayer(); } catch (IllegalStateException ignored) { }
         if (audio != null && audioFocus != null) audio.abandonAudioFocusRequest(audioFocus);
-        if (playingTrack != null && player != null) PlaybackService.update(this, playingTrack.title, playingTrack.artist, false);
+        if (playingTrack != null && player != null) PlaybackService.update(this, playingTrack.title, playingTrack.artist, false, null, positionMs(), durationMs());
     }
     private void releasePlayer() {
         if (player != null) { player.setOnCompletionListener(null); player.release(); player = null; }
@@ -1433,6 +1433,22 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             playingTrack = null;
             if (playerPanel != null) playerPanel.setVisibility(View.GONE);
             if (expandedPlayer != null) expandedPlayer.dismiss();
+        });
+    }
+
+    @Override public Class<?> playerActivity() { return StandaloneActivity.class; }
+    @Override public long positionMs() {
+        try { return player == null || preparing ? 0 : Math.max(0, player.getCurrentPosition()); }
+        catch (IllegalStateException ignored) { return 0; }
+    }
+    @Override public long durationMs() {
+        try { return player == null || preparing ? 0 : Math.max(0, player.getDuration()); }
+        catch (IllegalStateException ignored) { return 0; }
+    }
+    @Override public void onSeek(long position) {
+        runOnUiThread(() -> {
+            if (player == null || preparing) return;
+            try { player.seekTo((int) Math.max(0, position)); } catch (IllegalStateException ignored) { }
         });
     }
 

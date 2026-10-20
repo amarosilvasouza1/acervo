@@ -1,6 +1,6 @@
 {
   "name": "acervo",
-  "version": "1.5.4",
+  "version": "1.5.5",
   "private": true,
   "type": "module",
   "description": "Acervo - biblioteca musical com download do YouTube, normalizacao de loudness e recomendacoes por similaridade",

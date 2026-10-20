@@ -816,6 +816,22 @@ button[hidden] { display: none; }
 .setting-row input:checked::after { transform: translateX(19px); }
 .playlist-card .card-cover { overflow: hidden; }
 .playlist-card .card-cover img { width: 100%; height: 100%; object-fit: cover; }
+.playlist-warning { color: #ffdf9e; background: #302719; border: 1px solid #6b5128; border-radius: 8px; padding: 13px 16px; font-size: 13px; line-height: 1.6; margin: 14px 0; overflow-wrap: anywhere; }
+.playlist-source-note { margin: 14px 0; line-height: 1.6; }
+.playlist-error { display: block; color: #ffb4b4; font-size: 12px; line-height: 1.5; margin-top: 5px; white-space: normal; overflow-wrap: anywhere; }
+.playlist-rows .row { min-height: 66px; height: auto; grid-template-columns: 24px minmax(0, 1fr) auto; padding-top: 12px; padding-bottom: 12px; }
+.playlist-rows .row-cover { display: grid; place-items: center; }
+.playlist-rows .pill { max-width: 170px; white-space: normal; text-align: center; }
+.playlist-failed { color: #ffb4b4; background: #3c2020; }
+.playlist-filters { margin: 18px 0; }
+.playlist-file-label { display: flex; flex-direction: column; gap: 10px; padding: 16px 0; color: var(--text); font-size: 13px; }
+.playlist-file-button { margin: 16px 0; }
+.playlist-file-label input, .playlist-file-label select { max-width: 100%; min-width: 0; font: inherit; color: var(--text); }
+.playlist-file-label select { background: #222; border: 1px solid #555; border-radius: 6px; padding: 12px; }
+.playlist-preview { padding-left: 24px; margin: 20px 0; }
+.playlist-preview li { margin: 12px 0; font-size: 13px; overflow-wrap: anywhere; }
+.playlist-preview li span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.playlist-report { width: 100%; min-height: 280px; max-height: 55vh; resize: vertical; border: 1px solid #555; border-radius: 6px; background: #181818; color: #eee; padding: 12px; font: 13px/1.6 inherit; }
 
 /* skeletons */
 .skeleton {
@@ -937,6 +953,8 @@ button[hidden] { display: none; }
   .row { grid-template-columns: 26px minmax(0, 1fr) 70px; gap: 10px; }
   .row .row-meta, .row .row-end { display: none; }
   .row > .row-main { grid-column: 2 / -1; }
+  .playlist-rows .row > .row-main { grid-column: 2 / -1; }
+  .playlist-rows .row > .row-end { display: flex; grid-column: 2 / -1; justify-content: flex-start; padding-left: 52px; margin-top: 6px; }
   .player { height: 78px; grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; gap: 10px; }
   .player-main { display: contents; }
   .player-controls { grid-column: 2; grid-row: 1; }

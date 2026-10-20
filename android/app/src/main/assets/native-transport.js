@@ -8,6 +8,20 @@
       window.AcervoAndroid.connectedConfirmed(location.origin, key);
     }
   };
+  var playlistFile = null;
+  window.__acervoChoosePlaylistFile = function () {
+    if (playlistFile || !window.AcervoAndroid || !window.AcervoAndroid.choosePlaylistFile) return Promise.reject(new Error('Atualize o APK para importar arquivos ou use a versão web no navegador.'));
+    return new Promise(function (resolve, reject) {
+      playlistFile = { resolve: resolve, reject: reject };
+      window.AcervoAndroid.choosePlaylistFile(key);
+    });
+  };
+  window.__acervoPlaylistFile = function (event) {
+    if (!event || event.key !== key || !playlistFile) return;
+    var item = playlistFile; playlistFile = null;
+    if (event.error) item.reject(new Error(event.error));
+    else item.resolve(event.text);
+  };
   var original = window.fetch.bind(window), pending = new Map(), next = 1;
   function abortError() { return new DOMException('Operação cancelada.', 'AbortError'); }
   function bytes(base64) {

@@ -58,7 +58,13 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.4
+## Novidades 1.5.5
+
+- **Notificação com linha do tempo real:** o player em segundo plano informa posição e duração continuamente, aceita seek e mostra play/pause, anterior e próxima.
+- O toque na notificação abre a tela que está tocando: o player nativo quando o áudio é local, ou o WebView conectado quando a música vem do Acervo do PC.
+- **Importação de playlists:** link público do Spotify, playlist do YouTube ou arquivo CSV/JSON, com prévia, busca correspondente no YouTube e relatório de músicas baixadas ou com falha.
+
+## Histórico 1.5.4
 
 - O APK reaproveita conexões HTTPS e o contexto TLS do PC pareado, evitando repetir a negociação a cada capa e consulta. A identidade dos dois aparelhos continua sendo verificada.
 - O encaminhador Bore atende até 32 conexões simultâneas e mantém uma fila limitada a 32 pedidos por até quatro segundos para absorver a abertura da página. A latência do serviço público ainda pode afetar o acesso.
@@ -139,11 +145,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.5.4 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR e identidade própria do telefone. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.5.5 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR e identidade própria do telefone. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.4.apk](releases/acervo-1.5.4.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
+Instale [releases/acervo-1.5.5.apk](releases/acervo-1.5.5.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

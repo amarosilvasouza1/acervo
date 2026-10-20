@@ -284,6 +284,18 @@
     try {
       if (state.current) bridge.nowPlaying(state.current.title || '', state.current.artist || '', !!state.playing, state.current.hasCover ? '/api/cover/' + encodeURIComponent(state.current.id) : '');
     } catch (e) {}
+    notifyAndroidProgress();
+  }
+
+  function notifyAndroidProgress() {
+    var bridge = window.AcervoAndroid;
+    if (!bridge || typeof bridge.playbackProgress !== 'function') return;
+    try {
+      var position = isFinite(audio.currentTime) ? Math.round(Math.max(0, audio.currentTime) * 1000) : 0;
+      var duration = isFinite(audio.duration) ? Math.round(Math.max(0, audio.duration) * 1000) : 0;
+      if (!duration && state.current && state.current.duration) duration = Math.round(state.current.duration * 1000);
+      bridge.playbackProgress(position, duration, !!state.playing);
+    } catch (e) {}
   }
 
   function setPlayIcon() {
@@ -553,8 +565,8 @@
   audio.addEventListener('play', function () { if (AC.isRemotePlayback && AC.isRemotePlayback()) { audio.pause(); return; } state.playing = true; setPlayIcon(); if (AC.notifyPlayback) AC.notifyPlayback(true); });
   audio.addEventListener('pause', function () { if (AC.isRemotePlayback && AC.isRemotePlayback()) return; state.playing = false; setPlayIcon(); if (AC.notifyPlayback) AC.notifyPlayback(true); });
   audio.addEventListener('ended', function () { if (AC.isRemotePlayback && AC.isRemotePlayback()) return; state.playing = false; audio.dataset.listenedSource = ''; AC.next(true); });
-  audio.addEventListener('timeupdate', function () { if (AC.notifyPlayback) AC.notifyPlayback(false); if (AC.paintExpandedPlayer) AC.paintExpandedPlayer(); });
-  audio.addEventListener('seeked', function () { if (AC.notifyPlayback) AC.notifyPlayback(true); });
+  audio.addEventListener('timeupdate', function () { if (AC.notifyPlayback) AC.notifyPlayback(false); if (AC.paintExpandedPlayer) AC.paintExpandedPlayer(); notifyAndroidProgress(); });
+  audio.addEventListener('seeked', function () { if (AC.notifyPlayback) AC.notifyPlayback(true); notifyAndroidProgress(); });
   audio.addEventListener('error', function () {
     if (state.current) AC.toast('Nao foi possivel tocar este arquivo.', 'error');
   });
@@ -711,15 +723,16 @@
     return state.playlists;
   };
 
-  AC.importPlaylist = async function (url) {
+  AC.importPlaylist = async function (input) {
     AC.toast('Lendo a playlist…');
     try {
-      var result = await AC.api('/api/playlists/import', { method: 'POST', body: JSON.stringify({ url: url }) });
+      var result = await AC.api('/api/playlists/import', { method: 'POST', body: JSON.stringify(typeof input === 'string' ? { url: input } : input) });
       await AC.loadPlaylists();
       state.view = 'playlist';
       state.playlistId = result.playlist.id;
+      state.playlistOnlyFailed = false;
       if (typeof AC.render === 'function') AC.render();
-      AC.toast(result.total + ' músicas na fila. O download continua no computador.');
+      AC.toast(result.total + ' entradas importadas. Acompanhe o resultado de cada música nesta playlist.');
       return result;
     } catch (error) {
       AC.toast('Playlist: ' + error.message, 'error');
