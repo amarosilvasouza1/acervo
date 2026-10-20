@@ -30,7 +30,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 17, versionName: '1.5.6' };
+const ANDROID_VERSION = { versionCode: 18, versionName: '1.5.7' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -84,7 +84,8 @@ const MIME = {
 const jobs = new Map();
 const jobWaiters = new Map();
 const queue = [];
-let running = false;
+const DOWNLOAD_CONCURRENCY = Math.max(1, Math.min(3, Number(process.env.ACERVO_DOWNLOAD_CONCURRENCY) || 2));
+let activeDownloads = 0;
 const activeByVideo = new Map();
 const searchCache = new Map();
 const discoverCache = new Map();
@@ -196,18 +197,16 @@ function enqueueImport(input, options = {}) {
 }
 
 async function pump() {
-  if (running) return;
-  const job = queue.shift();
-  if (!job) return;
-  running = true;
-  try {
-    await processImport(job);
-  } catch (err) {
-    bumpJob(job, { status: 'error', stage: 'Falhou', error: String(err.message || err), message: 'Nao foi possivel concluir' });
-  } finally {
-    running = false;
-    if (job.videoId) activeByVideo.delete(job.videoId);
-    pump();
+  while (activeDownloads < DOWNLOAD_CONCURRENCY && queue.length) {
+    const job = queue.shift();
+    activeDownloads++;
+    processImport(job).catch(err => {
+      bumpJob(job, { status: 'error', stage: 'Falhou', error: String(err.message || err), message: 'Nao foi possivel concluir' });
+    }).finally(() => {
+      activeDownloads--;
+      if (job.videoId) activeByVideo.delete(job.videoId);
+      pump();
+    });
   }
 }
 

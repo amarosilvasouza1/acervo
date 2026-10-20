@@ -402,3 +402,31 @@ button.connect-device:hover { background: #2a2a2a; }
 @media (prefers-reduced-motion: reduce) {
   .home-view .section .grid { scroll-behavior: auto; scroll-snap-type: none; }
 }
+
+/* Refinos 1.5.7: artista e player */
+.artist-hero { position: relative; overflow: hidden; border-radius: 20px; min-height: 340px; padding: 34px; display: flex; align-items: flex-end; gap: 28px; isolation: isolate; background: #121a15; border: 1px solid #ffffff0f; }
+.artist-hero-backdrop { position: absolute; inset: -40px; background-position: center; background-size: cover; filter: blur(26px) saturate(1.15); opacity: .5; z-index: -2; transform: scale(1.12); }
+.artist-hero-shade { position: absolute; inset: 0; background: linear-gradient(90deg, #050806e6 0%, #05080699 55%, #05080633 100%); z-index: -1; }
+.artist-hero-picture { width: 210px; height: 210px; border-radius: 50%; object-fit: cover; box-shadow: 0 24px 60px #000a; flex: 0 0 auto; }
+.artist-hero-copy { position: relative; z-index: 1; min-width: 0; }
+.artist-stats { margin: 8px 0 0; color: #d7e6dc; font-size: 13px; letter-spacing: .02em; }
+.artist-hero-actions .btn-quiet { background: #ffffff14; border: 1px solid #ffffff1f; }
+@media (max-width: 720px) {
+  .artist-hero { padding: 22px; flex-direction: column; align-items: flex-start; min-height: 0; gap: 18px; }
+  .artist-hero-picture { width: 140px; height: 140px; }
+  .artist-stats { font-size: 12px; }
+}
+.now-playing-modal { position: relative; isolation: isolate; overflow-y: auto; background: #0b110d; border: 1px solid #ffffff12; border-radius: 18px; box-shadow: 0 30px 90px #000c; }
+.now-playing-modal::before { content: ""; position: absolute; inset: -52px; background: var(--np-cover, none) center/cover no-repeat; filter: blur(38px) saturate(1.25); opacity: .38; z-index: -2; transform: scale(1.15); }
+.now-playing-modal::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, #0a0f0cc7 0%, #0a0f0cf5 65%, #0a0f0c 100%); z-index: -1; }
+.now-playing-modal > * { position: relative; z-index: 1; }
+.now-playing-kicker { margin: 2px 0 8px; color: #9fb8aa; font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; text-align: center; }
+.now-playing-title { font-size: 28px; line-height: 1.12; text-align: center; }
+.now-playing-artist { text-align: center; font-size: 15px; }
+.now-playing-actions { display: flex; gap: 10px; justify-content: center; margin: 16px 0 18px; }
+.now-playing-chip { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid #ffffff1f; background: #ffffff0d; color: #e9f5ee; font-size: 12px; font-weight: 600; cursor: pointer; }
+.now-playing-chip:hover { background: #ffffff18; }
+.now-playing-art { width: min(100%, 380px); border-radius: 14px; box-shadow: 0 24px 70px #000b; }
+
+.artist-hero { min-height: 0; align-items: flex-start; }
+.now-playing-modal { background: #0b110d; } .now-playing-art { background: radial-gradient(circle at 30% 20%, #2a4a39, #0d1711 70%); border: 1px solid #ffffff14; } .now-playing-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; padding: 24px; text-align: center; color: #fff; } .now-playing-fallback svg { color: #1ed760; opacity: .8; } .now-playing-fallback strong { font-size: 20px; line-height: 1.25; } .now-playing-fallback small { color: #b3c7ba; font-size: 13px; }

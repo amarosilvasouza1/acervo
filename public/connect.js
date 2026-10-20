@@ -499,8 +499,12 @@
   AC.openExpandedPlayer = function () {
     if (!S.current) { AC.toast('Escolha uma música para ouvir.'); return; }
     C.dialog = 'player';
-    AC.openModal('<div class="now-playing-top"><button class="icon-btn" data-action="close-modal" aria-label="Recolher player">' + icon('close', 22) + '</button><span>TOCANDO AGORA</span><button class="icon-btn" data-action="queue" aria-label="Abrir fila">' + icon('queue', 22) + '</button></div>' +
-      '<div class="now-playing-art" id="expanded-art"></div><h2 class="now-playing-title" id="expanded-title"></h2><p class="now-playing-artist" id="expanded-artist"></p>' +
+    AC.openModal('<div class="now-playing-ambient" aria-hidden="true"></div>' +
+      '<div class="now-playing-top"><button class="icon-btn" data-action="close-modal" aria-label="Recolher player">' + icon('close', 22) + '</button><span>TOCANDO AGORA</span><button class="icon-btn" data-action="queue" aria-label="Abrir fila">' + icon('queue', 22) + '</button></div>' +
+      '<div class="now-playing-art" id="expanded-art"></div>' +
+      '<p class="now-playing-kicker" id="expanded-kicker">Sua biblioteca</p>' +
+      '<h2 class="now-playing-title" id="expanded-title"></h2><p class="now-playing-artist" id="expanded-artist"></p>' +
+      '<div class="now-playing-actions"><button class="now-playing-chip" data-action="queue">' + icon('queue', 15) + ' Fila</button><button class="now-playing-chip" id="expanded-artist-chip" data-action="open-artist">' + icon('wave', 15) + ' Artista</button></div>' +
       '<input id="expanded-seek" class="now-playing-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Posição da música"><div class="now-playing-times"><span id="expanded-current"></span><span id="expanded-duration"></span></div>' +
       '<div class="now-playing-controls"><button class="icon-btn" data-action="shuffle" aria-label="Aleatório">' + icon('shuffle', 22) + '</button><button class="icon-btn" data-action="prev" aria-label="Anterior">' + icon('prev', 27) + '</button><button class="play-btn" id="expanded-toggle" data-action="toggle" aria-label="Pausar"></button><button class="icon-btn" data-action="next" aria-label="Próxima">' + icon('next', 27) + '</button><button class="icon-btn" data-action="repeat" aria-label="Repetir">' + icon('repeat', 22) + '</button></div>' +
       '<button class="now-playing-device" data-action="connect-devices">' + icon('device', 18) + '<span id="expanded-device"></span></button>', 'modal now-playing-modal');
@@ -512,10 +516,22 @@
   AC.paintExpandedPlayer = function () {
     if (C.dialog !== 'player' || !S.current) return;
     var track = S.current;
+    var modal = document.querySelector('.now-playing-modal');
+    var cover = track.hasCover ? '/api/cover/' + encodeURIComponent(track.id) : (track.thumbnail || '');
+    if (modal) {
+      if (cover) modal.style.setProperty('--np-cover', 'url("' + String(cover).replace(/"/g, '%22') + '")');
+      else modal.style.removeProperty('--np-cover');
+    }
     var art = $('expanded-art');
-    if (art && art.dataset.trackId !== track.id) { art.innerHTML = AC.coverHtml(track, true); art.dataset.trackId = track.id; }
+    if (art && art.dataset.trackId !== track.id) {
+      var artCover = track.hasCover ? '/api/cover/' + encodeURIComponent(track.id) : (track.thumbnail || '');
+      art.innerHTML = artCover ? AC.coverHtml(track, true) : '<span class="now-playing-fallback">' + AC.icon('wave', 56) + '<strong>' + esc(track.title) + '</strong><small>' + esc(track.artist) + '</small></span>';
+      art.dataset.trackId = track.id;
+    }
     var title = $('expanded-title'); if (title) title.textContent = track.title;
     var artist = $('expanded-artist'); if (artist) artist.textContent = track.artist;
+    var kicker = $('expanded-kicker'); if (kicker) kicker.textContent = track.album || 'Sua biblioteca';
+    var artistChip = $('expanded-artist-chip'); if (artistChip) artistChip.setAttribute('data-artist', track.artist || '');
     var cur = AC.isRemotePlayback() ? AC.remotePosition() : audio.currentTime || 0;
     var seek = $('expanded-seek'); if (seek && !seek.dataset.dragging) seek.value = String(Math.round(cur / Math.max(1, track.duration) * 1000));
     var current = $('expanded-current'); if (current && (!seek || !seek.dataset.dragging)) current.textContent = AC.fmtTime(cur);

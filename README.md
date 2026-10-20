@@ -58,7 +58,13 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.6
+## Novidades 1.5.7
+
+- **Download mais rápido:** até duas músicas em paralelo, mantendo MP3 320 kbps, com fragmentos do YouTube baixados em paralelo pelo yt-dlp.
+- **Tela do artista mais completa:** capa de fundo, foto, contagem de músicas, botão Tocar tudo quando o artista está no acervo e atalhos para buscar e abrir a fonte.
+- **Player refinado:** fundo com a capa desfocada, capa maior, contexto do álbum, atalhos de Fila e Artista e controles mais legíveis. A estrutura continua a mesma, sem letras nem visualizador.
+
+## Histórico 1.5.6
 
 - **Link de música do Spotify:** cole uma faixa em `open.spotify.com/track/…` ou `spotify:track:…` e o Acervo busca título, artista e duração, procura a versão no YouTube e baixa como uma música única.
 - O fluxo de prévia e importação é o mesmo das playlists, com relatório de sucesso ou falha por faixa.
@@ -154,7 +160,7 @@ O endereço fica disponível apenas dentro da sua tailnet — não é publicado 
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.6.apk](releases/acervo-1.5.6.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
+Instale [releases/acervo-1.5.7.apk](releases/acervo-1.5.7.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

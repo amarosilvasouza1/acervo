@@ -335,6 +335,14 @@
     if (total) total.textContent = AC.fmtTime(t ? (t.duration || 0) : 0);
   }
 
+  AC.playQueue = function (ids) {
+    var list = (ids || []).filter(Boolean);
+    if (!list.length) return;
+    state.queue = list.slice();
+    state.qi = 0;
+    AC.play(list[0], { keepRadio: true });
+  };
+
   AC.play = function (id, opts) {
     var track = AC.trackById(id);
     if (!track) return;
