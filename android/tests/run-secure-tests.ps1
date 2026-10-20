@@ -16,10 +16,18 @@ foreach ($secureName in @('trusted', 'substituted', 'expired', 'phone', 'strange
 & $secureJavac --release 11 -encoding UTF-8 -d $secureOutput `
     (Join-Path $secureRoot 'android/app/src/main/java/br/com/acervo/app/PinnedTls.java') `
     (Join-Path $secureRoot 'android/app/src/main/java/br/com/acervo/app/PairingLink.java') `
+    (Join-Path $secureRoot 'android/app/src/main/java/br/com/acervo/app/TransportFailure.java') `
+    (Join-Path $secureRoot 'android/app/src/main/java/br/com/acervo/app/AppEntryPolicy.java') `
+    (Join-Path $PSScriptRoot 'AppEntryPolicyTest.java') `
+    (Join-Path $PSScriptRoot 'TransportFailureTest.java') `
     (Join-Path $PSScriptRoot 'PinnedTlsTest.java') (Join-Path $PSScriptRoot 'PairingLinkTest.java')
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao compilar o teste de TLS.' }
+& $secureJava -cp $secureOutput br.com.acervo.app.AppEntryPolicyTest
+if ($LASTEXITCODE -ne 0) { throw 'Falha na entrada direta do aplicativo.' }
 & $secureJava -cp $secureOutput br.com.acervo.app.PairingLinkTest
 if ($LASTEXITCODE -ne 0) { throw 'Falha nos limites do QR.' }
+& $secureJava -cp $secureOutput br.com.acervo.app.TransportFailureTest
+if ($LASTEXITCODE -ne 0) { throw 'Falha nas mensagens seguras da conexão.' }
 & $secureJava -cp $secureOutput br.com.acervo.app.PinnedTlsTest `
     (Join-Path $secureOutput 'trusted.p12') (Join-Path $secureOutput 'substituted.p12') (Join-Path $secureOutput 'expired.p12') `
     (Join-Path $secureOutput 'phone.p12') (Join-Path $secureOutput 'stranger.p12')

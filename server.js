@@ -18,6 +18,9 @@ import { openSafeFile } from './lib/safe-files.js';
 import { sendFile } from './lib/file-response.js';
 import { validVideoId, validateImportInput, safeThumbnailUrl } from './lib/input-policy.js';
 import { resolveTrackMetadata } from './lib/track-metadata.js';
+import { createInternetRelay } from './lib/internet-relay.js';
+import { createBoreRelay } from './lib/bore-relay.js';
+import { acquireServerInstance } from './lib/server-instance.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -26,7 +29,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 12, versionName: '1.5.0' };
+const ANDROID_VERSION = { versionCode: 15, versionName: '1.5.4' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -38,13 +41,27 @@ const SECURE_PORT = Number(process.env.ACERVO_HTTPS_PORT || PORT + 1);
 if (MODE === 'local' && (!Number.isInteger(SECURE_PORT) || SECURE_PORT < 1 || SECURE_PORT > 65535 || SECURE_PORT === PORT)) {
   throw new Error('ACERVO_HTTPS_PORT deve ser uma porta válida diferente da porta HTTP.');
 }
+const releaseInstance = acquireServerInstance({ directory: DATA, port: PORT });
+process.once('exit', releaseInstance);
+process.once('SIGINT', () => process.exit(0));
+process.once('SIGTERM', () => process.exit(0));
 const tlsIdentity = MODE === 'local' ? await loadTlsIdentity({ directory: path.join(DATA, 'identity') }) : null;
+let internetRelay = null;
+let boreRelay = null;
+let internetOperation = false;
+function relaySnapshot() {
+  return (boreRelay?.isEnabled() ? boreRelay : internetRelay)?.snapshot()
+    || { state: 'offline', verified: false };
+}
 const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: MODE,
   ...(tlsIdentity ? { secureTransport: { port: SECURE_PORT, pin: tlsIdentity.spkiPin, requireClientIdentity: true,
-    deviceFile: path.join(DATA, 'paired-phone.json'), publicEndpoint: process.env.ACERVO_PUBLIC_ENDPOINT } } : {}),
+    deviceFile: path.join(DATA, 'paired-phone.json'), endpointFile: path.join(DATA, 'connect-network.json'), publicEndpoint: process.env.ACERVO_PUBLIC_ENDPOINT },
+    internetRelayStatus: relaySnapshot } : {}),
   publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
   trustTailscale: process.env.ACERVO_TRUST_TAILSCALE === '1',
   stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
+if (tlsIdentity) internetRelay = createInternetRelay({ securePort: SECURE_PORT, stateFile: path.join(DATA, 'internet-relay.json') });
+if (tlsIdentity) boreRelay = createBoreRelay({ securePort: SECURE_PORT, stateFile: path.join(DATA, 'bore-relay.json') });
 const catalog = createCatalogService({ getTracks: Library.all, getHistory: Library.history });
 
 const MIME = {
@@ -393,6 +410,56 @@ async function handleRequest(req, res) {
     if (req.method === 'GET' && pathname === '/healthz') return sendJson(res, 200, { ok: true });
     const connection = connect.authorize(req, pathname);
     connect.trackResponse(req, res, connection);
+    if (pathname === '/api/connect/endpoint' && (internetOperation || internetRelay?.isBusy() || boreRelay?.isBusy())) {
+      return sendJson(res, 409, { error: 'O encaminhador está sendo atualizado. Aguarde antes de mudar o endereço.' });
+    }
+    if (pathname.startsWith('/api/connect/internet/')) {
+      if (!connection.local || !internetRelay) return sendJson(res, 403, { error: 'Configure o acesso pela internet no próprio PC que hospeda o Acervo.' });
+      if (req.method === 'GET' && pathname === '/api/connect/internet/status') {
+        return sendJson(res, 200, { snapshot: connect.snapshot(connection), relay: relaySnapshot() });
+      }
+      if (req.method === 'POST' && ['/api/connect/internet/enable', '/api/connect/internet/disable'].includes(pathname)) {
+        if (internetOperation || internetRelay.isBusy() || boreRelay.isBusy()) return sendJson(res, 409, { error: 'A conexão pela internet já está sendo atualizada. Aguarde.' });
+        const body = await readBody(req);
+        if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length) {
+          return sendJson(res, 400, { error: 'Esta ação não recebe endereços nem comandos externos.' });
+        }
+        const security = connect.snapshot(connection).security;
+        if (pathname.endsWith('/enable') && !security.publicEndpointEditable) {
+          return sendJson(res, 409, { error: 'O endereço público está definido por ACERVO_PUBLIC_ENDPOINT. Remova essa variável e reinicie para usar o encaminhador gerenciado.' });
+        }
+        internetOperation = true;
+        try {
+          const configure = endpoint => security.publicEndpointEditable
+            && connect.snapshot(connection).security.publicEndpoint !== endpoint
+            ? connect.updateEndpoint(connection, { publicEndpoint: endpoint }) : undefined;
+          const options = () => ({ pcPin: tlsIdentity.spkiPin,
+            currentEndpoint: connect.snapshot(connection).security.publicEndpoint, configure });
+          let relay;
+          if (pathname.endsWith('/enable')) {
+            if (boreRelay.isEnabled()) relay = await boreRelay.enable(options());
+            else {
+              try { relay = await internetRelay.enable(options()); }
+              catch { relay = null; }
+              if (!relay || relay.state !== 'online' || relay.verified !== true) {
+                // Preserve end-to-end mTLS when the first relay cannot publish DNS.
+                await internetRelay.disable(options());
+                relay = await boreRelay.enable(options());
+              }
+            }
+          } else {
+            await boreRelay.disable(options());
+            await internetRelay.disable(options());
+            relay = relaySnapshot();
+          }
+          return sendJson(res, 200, { snapshot: connect.snapshot(connection), relay });
+        } catch (error) {
+          return sendJson(res, error.statusCode || 503, { error: error.message,
+            ...(error.actionUrl === 'https://tailscale.com/s/no-funnel' ? { actionUrl: error.actionUrl } : {}) });
+        } finally { internetOperation = false; }
+      }
+      return sendJson(res, 405, { error: 'Método não permitido.' });
+    }
     if (await connect.handle(req, res, pathname, connection, readBody, sendJson)) return;
     if (req.method === 'GET' && (pathname === '/api/explore' || pathname === '/api/artist')) {
       const controller = new AbortController();
@@ -626,4 +693,16 @@ if (tlsIdentity) {
 
 server.listen(PORT, HTTP_HOST, function () {
   console.log(MODE === 'cloud' ? 'Acervo na nuvem: ' + process.env.ACERVO_PUBLIC_ORIGIN : 'Acervo rodando em http://127.0.0.1:' + PORT);
+  if (boreRelay?.isEnabled()) {
+    const owner = { local: true };
+    const security = connect.snapshot(owner).security;
+    if (security.publicEndpointEditable && security.publicEndpoint === boreRelay.snapshot().publicEndpoint) {
+      internetOperation = true;
+      boreRelay.resume({ pcPin: tlsIdentity.spkiPin, currentEndpoint: security.publicEndpoint,
+        configure: endpoint => connect.snapshot(owner).security.publicEndpoint !== endpoint
+          ? connect.updateEndpoint(owner, { publicEndpoint: endpoint }) : undefined })
+        .catch(() => console.warn('O acesso pela internet ainda não foi confirmado. Confira Dispositivos no PC.'))
+        .finally(() => { internetOperation = false; });
+    }
+  }
 });

@@ -3,6 +3,7 @@ package br.com.acervo.app;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyInfo;
 import android.security.keystore.KeyProperties;
 import java.io.IOException;
 import java.math.BigInteger;
@@ -10,6 +11,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.Key;
+import java.security.KeyFactory;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.MessageDigest;
@@ -30,6 +32,8 @@ import javax.security.auth.x500.X500Principal;
 public final class PhoneIdentity {
     private static final String STORE = "AndroidKeyStore";
     private static final String PREFIX = "acervo_device_v1_";
+    private static final String TLS_PREFIX = "acervo_device_v2_";
+    private static final String UPGRADE = "A identidade antiga deste telefone precisa ser atualizada. Gere e escaneie um novo QR code no PC. Se o PC já mostra um celular vinculado, remova esse vínculo no PC antes de parear novamente.";
     private PhoneIdentity() { }
 
     static String canonicalOrigin(String origin) throws GeneralSecurityException {
@@ -44,6 +48,44 @@ public final class PhoneIdentity {
         StringBuilder alias = new StringBuilder(PREFIX);
         for (byte value : digest) alias.append(String.format(Locale.US, "%02x", value & 255));
         return alias.toString();
+    }
+
+    static String tlsAliasFor(String serverPin) throws GeneralSecurityException {
+        return TLS_PREFIX + aliasFor(serverPin).substring(PREFIX.length());
+    }
+
+    static String[] tlsDigests() { return new String[] { KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA256 }; }
+
+    static boolean supportsTlsDigest(String[] digests) {
+        if (digests != null) for (String digest : digests) if (KeyProperties.DIGEST_NONE.equals(digest)) return true;
+        return false;
+    }
+
+    private static String selectionKey(String pin) { return "identity_alias:" + pin; }
+
+    private static String activeAlias(SharedPreferences preferences, String pin) throws GeneralSecurityException {
+        String alias = preferences.getString(selectionKey(pin), null);
+        if (alias == null) return aliasFor(pin); // Existing installations used v1 before alias selection was recorded.
+        if (!alias.equals(aliasFor(pin)) && !alias.equals(tlsAliasFor(pin))) throw new GeneralSecurityException("Identidade selecionada inválida.");
+        return alias;
+    }
+
+    /** This policy is used only after an explicit QR scan; ordinary reconnect never creates a key. */
+    static String aliasForQr(String pin, String selected, boolean legacyExists, boolean legacyTls,
+            boolean currentExists, boolean currentTls, boolean knownMapping) throws GeneralSecurityException {
+        String legacy = aliasFor(pin), current = tlsAliasFor(pin);
+        if (selected != null && !selected.equals(legacy) && !selected.equals(current)) throw new GeneralSecurityException("Identidade selecionada inválida.");
+        if (current.equals(selected)) {
+            if (!currentExists || !currentTls) throw new GeneralSecurityException("A chave pareada está ausente ou indisponível.");
+            return current;
+        }
+        if (legacyExists && legacyTls) return legacy;
+        if (currentExists) {
+            if (!currentTls) throw new GeneralSecurityException("A chave TLS existente está indisponível.");
+            return current;
+        }
+        if (knownMapping && !legacyExists) throw new GeneralSecurityException("A chave pareada foi removida do Android Keystore.");
+        return current; // A fresh installation or an incompatible v1 identity gets a separate v2 key.
     }
 
     private static SharedPreferences identities(Context context) {
@@ -70,19 +112,22 @@ public final class PhoneIdentity {
     public static synchronized void ensure(Context context, String origin, String serverPin) throws IOException {
         try {
             String canonical = canonicalOrigin(origin);
-            String alias = aliasFor(serverPin);
             SharedPreferences preferences = identities(context);
             String oldPin = preferences.getString(canonical, null);
             if (oldPin != null && !oldPin.equals(serverPin)) throw new GeneralSecurityException("A identidade do computador mudou.");
             KeyStore store = store();
+            String legacy = aliasFor(serverPin), current = tlsAliasFor(serverPin);
+            String alias = aliasForQr(serverPin, preferences.getString(selectionKey(serverPin), null),
+                    store.containsAlias(legacy), tlsCapable(store, legacy), store.containsAlias(current), tlsCapable(store, current),
+                    preferences.getAll().containsValue(serverPin));
             if (!store.containsAlias(alias)) {
-                if (preferences.getAll().containsValue(serverPin)) throw new GeneralSecurityException("A chave pareada foi removida do Android Keystore.");
                 Calendar end = Calendar.getInstance();
                 end.add(Calendar.YEAR, 10);
                 KeyPairGenerator generator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, STORE);
                 generator.initialize(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
                         .setAlgorithmParameterSpec(new ECGenParameterSpec("secp256r1"))
-                        .setDigests(KeyProperties.DIGEST_SHA256)
+                        // Conscrypt pre-hashes the TLS transcript, then signs using NONEwithECDSA.
+                        .setDigests(tlsDigests())
                         .setUserAuthenticationRequired(false)
                         .setCertificateSubject(new X500Principal("CN=Acervo device"))
                         .setCertificateSerialNumber(new BigInteger(127, new SecureRandom()).add(BigInteger.ONE))
@@ -93,16 +138,19 @@ public final class PhoneIdentity {
                 store = store();
             }
             loadManager(store, alias);
-            if (!preferences.edit().putString(canonical, serverPin).commit()) throw new IOException("Não foi possível guardar o vínculo da identidade deste telefone.");
+            if (!preferences.edit().putString(canonical, serverPin).putString(selectionKey(serverPin), alias).commit()) throw new IOException("Não foi possível guardar o vínculo da identidade deste telefone.");
         } catch (GeneralSecurityException | IllegalArgumentException failure) {
             throw new IOException("Não foi possível proteger a identidade deste telefone no Android Keystore.", failure);
         }
     }
 
     public static synchronized KeyManager[] keyManagers(Context context, String origin) throws IOException {
-        try { return new KeyManager[] { loadManager(store(), aliasFor(mappedPin(context, origin))) }; }
+        try {
+            String pin = mappedPin(context, origin);
+            return new KeyManager[] { loadManager(store(), activeAlias(identities(context), pin)) };
+        }
         catch (GeneralSecurityException | IllegalArgumentException failure) {
-            throw new IOException("A identidade deste telefone não está disponível. Remova o pareamento e escaneie um novo QR code.", failure);
+            throw new IOException(failure instanceof TlsUpgradeRequired ? UPGRADE : "A identidade deste telefone não está disponível. Remova o pareamento e escaneie um novo QR code.", failure);
         }
     }
 
@@ -111,7 +159,7 @@ public final class PhoneIdentity {
             KeyStore store = store();
             String pin = identities(context).getString(canonicalOrigin(origin), null);
             if (pin == null) return null;
-            String alias = aliasFor(pin);
+            String alias = activeAlias(identities(context), pin);
             return PinnedTls.fingerprint(loadManager(store, alias).getCertificateChain(alias)[0]);
         } catch (GeneralSecurityException | IllegalArgumentException failure) {
             throw new IOException("Não foi possível conferir a identidade deste telefone.", failure);
@@ -128,12 +176,28 @@ public final class PhoneIdentity {
             for (java.util.Map.Entry<String, ?> mapping : preferences.getAll().entrySet()) {
                 if (!canonical.equals(mapping.getKey()) && pin.equals(mapping.getValue())) { shared = true; break; }
             }
-            if (!shared) store().deleteEntry(aliasFor(pin));
-            if (!preferences.edit().remove(canonical).commit()) throw new IOException("Não foi possível remover o vínculo da identidade deste telefone.");
+            SharedPreferences.Editor editor = preferences.edit().remove(canonical);
+            if (!shared) {
+                KeyStore store = store();
+                store.deleteEntry(aliasFor(pin));
+                store.deleteEntry(tlsAliasFor(pin));
+                editor.remove(selectionKey(pin));
+            }
+            if (!editor.commit()) throw new IOException("Não foi possível remover o vínculo da identidade deste telefone.");
         }
         catch (GeneralSecurityException | IllegalArgumentException failure) {
             throw new IOException("Não foi possível remover a identidade deste telefone.", failure);
         }
+    }
+
+    private static final class TlsUpgradeRequired extends GeneralSecurityException { TlsUpgradeRequired() { super(UPGRADE); } }
+
+    private static boolean tlsCapable(KeyStore store, String alias) throws GeneralSecurityException {
+        if (!store.containsAlias(alias)) return false;
+        Key key = store.getKey(alias, null);
+        if (!(key instanceof PrivateKey) || !"EC".equalsIgnoreCase(key.getAlgorithm()) || key.getEncoded() != null) return false;
+        KeyInfo info = KeyFactory.getInstance(KeyProperties.KEY_ALGORITHM_EC, STORE).getKeySpec(key, KeyInfo.class);
+        return (info.getPurposes() & KeyProperties.PURPOSE_SIGN) != 0 && supportsTlsDigest(info.getDigests());
     }
 
     private static X509ExtendedKeyManager loadManager(KeyStore store, String alias) throws GeneralSecurityException {
@@ -143,6 +207,7 @@ public final class PhoneIdentity {
                 || !"EC".equalsIgnoreCase(key.getAlgorithm()) || key.getEncoded() != null) {
             throw new GeneralSecurityException("Chave privada não exportável do telefone ausente.");
         }
+        if (!tlsCapable(store, alias)) throw new TlsUpgradeRequired();
         X509Certificate leaf = (X509Certificate) certificate;
         leaf.checkValidity();
         return manager(alias, (PrivateKey) key, new X509Certificate[] { leaf });

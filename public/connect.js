@@ -7,10 +7,12 @@
   var icon = AC.icon;
   var C = AC.connect = {
     ready: false, connected: false, local: false, admin: false, cloud: false, configured: false, security: null, deviceId: null, devices: [], playback: null,
-    receivedAt: 0, applying: false, dialog: null, pairing: null, candidate: 0, needsGesture: false
+    receivedAt: 0, applying: false, dialog: null, pairing: null, pairingExpired: false, candidate: 0, needsGesture: false
   };
   var events = null;
   var initialized = null;
+  // The invitation survives a transport retry in this document, never in browser storage.
+  var pendingInvitation = null;
   var lastPublished = 0;
   var sending = false;
   var pendingPublish = false;
@@ -19,7 +21,18 @@
   var commandQueue = Promise.resolve();
   var restoring = Promise.resolve();
   var creatingPairing = null;
+  var endpointBusy = false;
+  var endpointDraft = null;
+  var endpointSignature = null;
+  var relayBusy = false;
+  var relayMessage = '';
+  var relayActionUrl = null;
+  var pairingGeneration = 0;
   function $(id) { return document.getElementById(id); }
+  function confirmNativeConnection() {
+    if (!C.ready || typeof window.__acervoConnectionReady !== 'function') return;
+    try { window.__acervoConnectionReady(); } catch (ignored) { }
+  }
   function kind() { return /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent || '') ? 'mobile' : 'desktop'; }
   function deviceName() { return kind() === 'mobile' ? 'Meu celular' : 'Meu computador'; }
   function device(id) { return C.devices.find(function (item) { return item.id === id; }); }
@@ -30,6 +43,12 @@
   function phonePaired() { return mutualSecurity() && Boolean(C.security.pairedDeviceId || validPin(C.security.phonePin)); }
   function validPin(value) { return typeof value === 'string' && /^[a-f0-9]{64}$/i.test(value); }
   function pinText(value) { return validPin(value) ? value.toUpperCase().match(/.{1,8}/g).join(' ') : ''; }
+  function internetCandidate(candidate) {
+    if (C.cloud) return true;
+    if (!C.security || !C.security.publicEndpoint || !candidate || !candidate.url) return false;
+    try { return new URL(candidate.url).origin === new URL(C.security.publicEndpoint).origin; }
+    catch (error) { return false; }
+  }
   function connectionPrompt() { return C.cloud ? 'Entre com a senha do seu Acervo ou use um código criado em um dispositivo já conectado.' : mutualSecurity() ? 'No computador, abra Dispositivos. Use o leitor de QR code do APK atualizado para vincular este celular.' : 'No computador, abra Dispositivos e escaneie o QR code com a câmera do celular.'; }
 
   async function api(path, body, method) {
@@ -38,7 +57,7 @@
     var response = await fetch(path, { method: method || (body === undefined ? 'GET' : 'POST'), headers: headers,
       credentials: 'same-origin', body: body === undefined ? undefined : JSON.stringify(body) });
     var data = await response.json().catch(function () { return {}; });
-    if (!response.ok) { var err = new Error(data.error || 'Não foi possível conectar agora.'); err.status = response.status; throw err; }
+    if (!response.ok) { var err = new Error(data.error || 'Não foi possível conectar agora.'); err.status = response.status; err.actionUrl = data.actionUrl; throw err; }
     return data;
   }
 
@@ -136,12 +155,16 @@
   }
 
   function acceptSnapshot(snapshot) {
+    var previousPhone = C.security && C.security.pairedDeviceId;
+    var previousPhonePin = C.security && C.security.phonePin;
+    var previousEndpoint = C.security && C.security.publicEndpoint;
     var previousIds = new Set(C.devices.map(function (item) { return item.id; }));
     if (C.pairing && (snapshot.devices || []).some(function (item) { return !item.local && !previousIds.has(item.id); })) C.pairing = null;
     C.local = Boolean(snapshot.local); C.admin = Boolean(snapshot.admin);
     if (typeof snapshot.cloud === 'boolean') C.cloud = snapshot.cloud;
     if (snapshot.security && typeof snapshot.security === 'object') C.security = Object.assign({}, C.security || {}, snapshot.security);
-    if (phonePaired()) C.pairing = null;
+    if (snapshot.security && Object.prototype.hasOwnProperty.call(snapshot.security, 'publicEndpoint') && previousEndpoint !== C.security.publicEndpoint) { pairingGeneration++; C.pairing = null; }
+    if (snapshot.security && (previousPhone !== C.security.pairedDeviceId || previousPhonePin !== C.security.phonePin)) { pairingGeneration++; C.pairing = null; }
     C.deviceId = snapshot.deviceId || C.deviceId;
     C.devices = snapshot.devices || C.devices; C.ready = Boolean(C.deviceId);
     if (snapshot.playback) acceptPlayback(snapshot.playback);
@@ -152,6 +175,8 @@
     catch (err) { if (err.status === 401) revoke(); }
   }
   function revoke(message) {
+    pairingGeneration++;
+    pendingInvitation = null;
     C.ready = false; C.connected = false; C.needsGesture = false; C.admin = false;
     C.deviceId = null; C.devices = []; C.playback = null; C.pairing = null;
     if (C.security) C.security = Object.assign({}, C.security, { phonePin: null, pairedDeviceId: null });
@@ -190,22 +215,41 @@
     initialized = (async function () {
       var hash = new URLSearchParams(location.hash.replace(/^#/, ''));
       var pairingCode = hash.get('pair');
-      if (pairingCode) history.replaceState(null, '', location.pathname + location.search);
+      if (pairingCode) {
+        pendingInvitation = { code: pairingCode, expiresAt: Date.now() + 5 * 60 * 1000, recover: false };
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+      if (pendingInvitation && Date.now() >= pendingInvitation.expiresAt) pendingInvitation = null;
+      var invitation = pendingInvitation;
+      C.configured = false;
       try {
         var config = await api('/api/connect/config');
         C.cloud = Boolean(config.cloud); C.security = config.security || null; C.configured = true;
         var info;
-        if (pairingCode) info = await api('/api/connect/claim', { code: pairingCode, name: deviceName(), kind: kind() });
-        else info = await api('/api/connect/info');
+        if (invitation && invitation.recover) {
+          // A lost response may hide a completed claim. Reuse that authenticated identity first.
+          try { info = await api('/api/connect/info'); }
+          catch (error) { if (error.status !== 401) throw error; }
+        }
+        if (invitation && !info) {
+          invitation.recover = true;
+          try { info = await api('/api/connect/claim', { code: invitation.code, name: deviceName(), kind: kind() }); }
+          catch (error) {
+            if (error.status && error.status < 500 && error.status !== 429) pendingInvitation = null;
+            throw error;
+          }
+        } else if (!info) info = await api('/api/connect/info');
+        pendingInvitation = null;
         C.local = Boolean(info.local);
         if (C.local) {
           var saved = sessionStorage.getItem('acervo:device-id');
           info = await api('/api/connect/register', { deviceId: saved || undefined, name: deviceName(), kind: kind() });
           sessionStorage.setItem('acervo:device-id', info.deviceId);
         }
-        acceptSnapshot(info); listen(); return true;
+        acceptSnapshot(info); listen(); confirmNativeConnection(); return true;
       } catch (err) {
-        showPairingRequired(!C.configured ? 'Não foi possível consultar a conexão com seu Acervo. Confira a internet e tente novamente.' : pairingCode ? err.message : err.status === 401 ? connectionPrompt() : err.message);
+        var nativeDetail = err && /^AC-(DNS|TEMPO|REDE|CHAVE|TLS|CONEXAO): /.test(err.message || '') ? err.message : null;
+        showPairingRequired(!C.configured ? nativeDetail || 'Não foi possível consultar a conexão com seu Acervo. Confira a internet e tente novamente.' : invitation ? err.message : err.status === 401 ? connectionPrompt() : err.message);
         return false;
       }
     })();
@@ -225,7 +269,9 @@
         '<button class="btn btn-accent" type="submit">Entrar</button></form>' :
         '<div class="connect-help">' + (mutualSecurity() ? 'Deixe o computador ligado. O vínculo usa as identidades criptográficas do PC e deste celular; abra Escanear QR code dentro do APK atualizado. Um navegador comum não apresenta a identidade do aplicativo.' : 'Deixe o computador ligado e os dois aparelhos no mesmo Wi‑Fi. Use a câmera do celular para abrir o link do QR code.') + '</div>') +
       (!mutualSecurity() ? '<form id="connect-claim-form"><label for="connect-code">Já tem um código de conexão?</label><input class="seed-select" id="connect-code" autocomplete="off" placeholder="Cole o código de conexão" required>' +
-      '<button class="btn btn-accent" type="submit">Conectar</button></form>' : '') + '<p id="connect-error" class="connect-status" role="status"></p>', 'modal connect-modal');
+      '<button class="btn btn-accent" type="submit">Conectar</button></form>' : '') +
+      (pendingInvitation ? '<button class="btn btn-accent" data-action="connect-retry">Tentar novamente</button>' : '') +
+      '<p id="connect-error" class="connect-status" role="status"></p>', 'modal connect-modal');
     var login = C.cloud && $('connect-login-form');
     if (login) login.addEventListener('submit', async function (event) {
       event.preventDefault();
@@ -253,7 +299,8 @@
   }
 
   async function finishConnection(info, message) {
-    acceptSnapshot(info); listen(); AC.closeModals(); await refreshLibrary(); AC.toast(message);
+    pendingInvitation = null;
+    acceptSnapshot(info); listen(); confirmNativeConnection(); AC.closeModals(); await refreshLibrary(); AC.toast(message);
   }
 
   function deviceList() {
@@ -266,20 +313,21 @@
     }).join('') || '<p class="tiny">Nenhum outro dispositivo conectado ainda.</p>';
   }
   function pairingHtml() {
-    if (phonePaired()) return '<div class="connect-help"><p>Este PC já está vinculado a um celular. Para vincular outro, remova o celular autorizado na lista acima e gere um novo QR code.</p><p>O vínculo atual permanece protegido; outro convite não troca o aparelho automaticamente.</p></div>';
-    if (!C.pairing) return '<div class="connect-help"><p>' + (C.cloud ? 'Escaneie o QR code em outro dispositivo para conectar seu Acervo pela internet.' : mutualSecurity() ? 'Vincule um único celular pelo leitor de QR code do APK atualizado.' : 'Conecte o celular à mesma rede Wi‑Fi e escaneie o QR code.') + '</p><button class="btn btn-accent" data-action="connect-create">Gerar QR code</button></div>';
+    if (phonePaired() && !C.pairing) return '<div class="connect-help"><p>Este PC já está vinculado a um celular. Para vincular outro, remova o celular autorizado na lista acima e gere um novo QR code.</p><p>O vínculo atual permanece protegido; outro convite não troca o aparelho automaticamente.</p>' + (C.pairingExpired ? '<p>O convite anterior expirou.</p>' : '') + '<button class="btn btn-ghost" data-action="connect-refresh-address">Atualizar endereço no celular vinculado</button></div>';
+    if (!C.pairing) return '<div class="connect-help"><p>' + (C.pairingExpired ? 'Este QR code expirou. Gere outro convite para conectar.' : C.cloud ? 'Escaneie o QR code em outro dispositivo para conectar seu Acervo pela internet.' : mutualSecurity() ? 'Vincule um único celular pelo leitor de QR code do APK atualizado.' : 'Conecte o celular à mesma rede Wi‑Fi e escaneie o QR code.') + '</p><button class="btn btn-accent" data-action="connect-create">Gerar QR code</button></div>';
     if (Date.now() >= C.pairing.expiresAt) return '<div class="connect-help"><p>Este QR code expirou.</p><button class="btn btn-accent" data-action="connect-create">Gerar outro QR code</button></div>';
     var candidates = C.pairing.candidates || [];
     var selected = candidates[C.candidate] || C.pairing;
     if (!selected.url || !selected.qrDataUrl) return '<div class="connect-help">' + (C.cloud ? 'O endereço público do seu Acervo não está disponível. Confira a configuração do servidor.' : 'Nenhuma rede local encontrada. Conecte o computador ao Wi‑Fi ou ao cabo de rede e tente novamente.') + '</div>';
     var pinned = C.pairing.security && ['tls-pinned', 'mtls-pinned'].includes(C.pairing.security.type) && validPin(C.pairing.security.pin);
     var mutual = mutualSecurity() || Boolean(C.pairing.security && C.pairing.security.type === 'mtls-pinned');
+    var verifiedInternet = internetCandidate(selected) && C.security && C.security.internetRelay && C.security.internetRelay.state === 'online' && C.security.internetRelay.verified === true;
     var security = pinned && !mutual ? '<div class="connect-security"><strong>Conexão criptografada</strong><p>Escaneie com o leitor do APK. O QR confirma a identidade deste computador. No celular, abra Proteção para comparar o código:</p><code>' + esc(pinText(C.pairing.security.pin)) + '</code></div>' : '';
-    return '<div class="connect-qr"><img src="' + esc(selected.qrDataUrl) + '" alt="QR code para conectar o celular ao Acervo" width="220" height="220"></div><p class="connect-help">' + (pinned ? 'Abra Escanear QR code no APK atualizado.' : 'Abra a câmera do celular e aponte para o QR code.') + ' Ele vale por <span id="connect-countdown"></span> e conecta um aparelho.</p>' + security +
+    return '<p class="connect-help"><strong>' + (verifiedInternet ? 'Internet · conexão verificada' : internetCandidate(selected) ? 'Internet · acesso externo não verificado' : 'Rede local') + '</strong><br>' + (verifiedInternet ? 'Escaneie no APK para usar outra rede. Mantenha o computador ligado.' : internetCandidate(selected) ? 'Use outra rede somente se este endereço já alcançar o PC pela internet.' : 'Este endereço precisa estar acessível pela mesma rede do computador.') + '</p>' + (phonePaired() ? '<p class="connect-help">Este convite atualiza o endereço somente no celular já vinculado. Outro aparelho não pode substituir a identidade autorizada.</p>' : '') + '<div class="connect-qr"><img src="' + esc(selected.qrDataUrl) + '" alt="QR code para conectar o celular ao Acervo" width="220" height="220"></div><p class="connect-help">' + (pinned ? 'Abra Escanear QR code no APK atualizado.' : 'Abra a câmera do celular e aponte para o QR code.') + ' Ele vale por <span id="connect-countdown"></span> e conecta um aparelho.</p>' + security +
       (mutual ? '<p class="connect-help">O QR contém um convite de uso único e a identidade pública do PC. As chaves privadas ficam em cada aparelho. Mantenha o convite privado até concluir o vínculo.</p>' : '') +
-      (candidates.length > 1 ? '<label for="connect-network">' + (C.cloud ? 'Endereço de conexão' : 'Rede do computador') + '</label><select id="connect-network" class="seed-select">' + candidates.map(function (item, index) { return '<option value="' + index + '"' + (index === C.candidate ? ' selected' : '') + '>' + esc(item.address) + '</option>'; }).join('') + '</select>' : '') +
+      (candidates.length > 1 ? '<label for="connect-network">Endereço de conexão</label><select id="connect-network" class="seed-select">' + candidates.map(function (item, index) { return '<option value="' + index + '"' + (index === C.candidate ? ' selected' : '') + '>' + (internetCandidate(item) ? 'Internet · ' : 'Rede local · ') + esc(item.address) + '</option>'; }).join('') + '</select>' : '') +
       '<div class="connect-copy"><input id="connect-url" readonly value="' + esc(selected.url) + '" aria-label="Link para conectar o celular"><button class="btn btn-ghost btn-sm" data-action="connect-copy">Copiar link</button></div>' + (!mutual ? '<details class="connect-help"><summary>Usar o código manualmente</summary><code>' + esc(C.pairing.code) + '</code></details>' : '') +
-      '<button class="btn btn-quiet btn-sm" data-action="connect-create">Gerar novo QR code</button>';
+      '<button class="btn btn-quiet btn-sm" data-action="' + (phonePaired() ? 'connect-refresh-address' : 'connect-create') + '">Gerar novo QR code</button>';
   }
   function verificationHtml() {
     if (!mutualSecurity()) return '';
@@ -287,8 +335,91 @@
     var pcPin = security.pcPin || (C.pairing && C.pairing.security && C.pairing.security.pin);
     return '<div class="connect-security"><strong>Verificação dos aparelhos</strong><p>Somente um celular pode acessar este PC pelo vínculo criptográfico. Compare estes códigos com os exibidos em Proteção no APK.</p>' +
       (validPin(pcPin) ? '<p>Identidade do PC</p><code>' + esc(pinText(pcPin)) + '</code>' : '') +
-      (validPin(security.phonePin) ? '<p>Identidade do celular autorizado</p><code>' + esc(pinText(security.phonePin)) + '</code>' : '<p>Nenhum celular autorizado ainda.</p>') +
-      (canManage() && security.publicEndpoint ? '<p>Endereço pela internet: ' + esc(security.publicEndpoint) + '</p><p>O endereço precisa estar acessível até este PC. O pareamento não configura roteador ou provedor.</p>' : '') + '</div>';
+      (validPin(security.phonePin) ? '<p>Identidade do celular autorizado</p><code>' + esc(pinText(security.phonePin)) + '</code>' : '<p>Nenhum celular autorizado ainda.</p>') + '</div>';
+  }
+  function endpointEditable() {
+    var security = C.security || {};
+    if (security.publicEndpointEditable === false) return false;
+    if (security.internetRelay && ['online', 'configured'].includes(security.internetRelay.state)) return false;
+    return C.local && mutualSecurity() && security.publicEndpointSource !== 'environment'
+      && !(security.publicEndpoint && security.publicEndpointSource === undefined);
+  }
+  function relayHtml() {
+    var security = C.security || {};
+    if (!C.local || !security.internetRelaySupported) return '';
+    var relay = security.internetRelay || {};
+    var online = relay.state === 'online' && relay.verified === true;
+    var configured = relay.state === 'configured' || relay.state === 'online';
+    return '<div class="connect-help"><p><strong>' + (online ? 'Conexão pela internet verificada' : configured ? 'Encaminhamento configurado · verificar conexão' : 'Ative o acesso deste PC pela internet') + '</strong></p><p>' +
+      (online ? 'Este endereço já foi conferido com a identidade criptográfica do PC. Gere o QR code para o celular usar outra rede.' : 'O PC pode usar um encaminhamento para ser alcançado de outra rede. Os dados continuam criptografados até o Acervo deste computador.') +
+      '</p><p>O computador precisa permanecer ligado e conectado. O celular usa apenas o APK, sem instalar Tailscale.</p><div class="connect-actions"><button class="btn btn-accent btn-sm" data-action="connect-internet-enable"' + (relayBusy ? ' disabled' : '') + '>' + (relayBusy ? 'Preparando conexão…' : online ? 'Verificar conexão pela internet' : configured ? 'Verificar e ativar conexão' : 'Ativar conexão pela internet') + '</button>' +
+      (configured ? '<button class="btn btn-quiet btn-sm" data-action="connect-internet-disable"' + (relayBusy ? ' disabled' : '') + '>Desativar encaminhamento</button>' : '') + '</div><p id="connect-relay-status" class="connect-status" role="status">' + esc(relayMessage) + '</p>' +
+      (relayActionUrl ? '<p><a href="' + esc(relayActionUrl) + '" target="_blank" rel="noopener noreferrer">Autorizar encaminhamento no provedor</a></p>' : '') + '</div>';
+  }
+  function paintInternet() {
+    var root = $('connect-internet');
+    if (!root || !C.local || !mutualSecurity()) return;
+    var security = C.security || {};
+    var endpoint = security.publicEndpoint || '';
+    var signature = JSON.stringify([endpoint, security.publicEndpointSource, endpointEditable(), security.internetRelaySupported, security.internetRelay, relayBusy, relayMessage, relayActionUrl]);
+    if (signature === endpointSignature) return;
+    endpointSignature = signature;
+    var relayManaged = security.internetRelay && ['online', 'configured'].includes(security.internetRelay.state);
+    root.innerHTML = '<h3>Conectar pela internet</h3>' + relayHtml() + '<div class="connect-help"><p><strong>' + (endpoint ? security.internetRelay && security.internetRelay.state === 'online' && security.internetRelay.verified === true ? 'Endereço de internet verificado' : 'Endereço configurado · acesso externo não verificado' : 'Sem endereço de internet configurado') + '</strong></p>' +
+      (endpoint ? '<p>Endereço pela internet: ' + esc(endpoint) + '</p>' : '<p>Os QR codes atuais usam a rede local. Para outra rede, configure um endereço HTTPS público que alcance este PC.</p>') +
+      '<p>O PC precisa permanecer ligado e o TLS deve chegar diretamente ao Acervo. Salvar o endereço não abre portas, não configura o roteador e não remove restrições de NAT ou CGNAT.</p></div>' +
+      (endpointEditable() ? '<details class="connect-help"><summary>Configurar um endereço público manualmente</summary><form id="connect-endpoint-form"><label for="connect-endpoint">Endereço HTTPS público deste PC</label><input class="seed-select" id="connect-endpoint" type="url" inputmode="url" autocomplete="url" maxlength="2048" placeholder="https://seu-endereco.exemplo:4311" value="' + esc(endpointDraft === null ? endpoint : endpointDraft) + '" required><p class="connect-help">Use somente o endereço e a porta, sem caminhos, usuário ou código de conexão.</p><div class="connect-actions"><button class="btn btn-accent btn-sm" id="connect-endpoint-save" type="submit">Salvar endereço</button>' + (endpoint ? '<button class="btn btn-quiet btn-sm" data-action="connect-remove-endpoint" type="button">Remover endereço</button>' : '') + '</div></form></details>' : '<p class="connect-help">' + (relayManaged ? 'Este endereço é gerenciado pelo encaminhamento. Desative-o antes de configurar um endereço manual.' : 'Este endereço é definido na configuração do servidor. Altere ACERVO_PUBLIC_ENDPOINT e reinicie o Acervo para atualizá-lo.') + '</p>') +
+      '<p id="connect-endpoint-status" class="connect-status" role="status"></p>';
+    var input = $('connect-endpoint');
+    if (input) input.addEventListener('input', function () { endpointDraft = input.value; });
+    var form = $('connect-endpoint-form');
+    if (form) form.addEventListener('submit', function (event) { event.preventDefault(); saveEndpoint(false); });
+  }
+  async function saveEndpoint(remove) {
+    if (!endpointEditable() || endpointBusy || relayBusy) return;
+    var input = $('connect-endpoint');
+    var value = remove ? null : String(input && input.value || '').trim();
+    var status = $('connect-endpoint-status');
+    if (!remove) {
+      try {
+        var parsed = new URL(value);
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw new Error();
+      } catch (error) { if (status) status.textContent = 'Use um endereço HTTPS válido, sem caminho, usuário, consulta ou fragmento.'; return; }
+    }
+    endpointBusy = true;
+    var authEpoch = S.authEpoch;
+    var ownerId = C.deviceId;
+    var button = $('connect-endpoint-save'); if (button) button.disabled = true;
+    if (status) status.textContent = 'Salvando endereço…';
+    try {
+      var snapshot = await api('/api/connect/endpoint', { publicEndpoint: value });
+      if (authEpoch !== S.authEpoch || !C.ready || !C.local || ownerId !== C.deviceId) return;
+      pairingGeneration++; C.pairing = null; C.pairingExpired = false; endpointDraft = null; endpointSignature = null;
+      acceptSnapshot(snapshot);
+      status = $('connect-endpoint-status');
+      if (status) status.textContent = remove ? 'Endereço removido. Gere um QR code da rede local quando precisar.' : 'Endereço salvo. Gere um novo QR code e selecione Internet. O acesso externo ainda precisa ser verificado pela outra rede.';
+    } catch (error) { status = $('connect-endpoint-status'); if (status) status.textContent = error.message; }
+    finally { endpointBusy = false; button = $('connect-endpoint-save'); if (button) button.disabled = false; }
+  }
+  async function manageInternet(enable) {
+    if (!C.ready || !C.local || !mutualSecurity() || !C.security.internetRelaySupported || relayBusy || endpointBusy) return;
+    relayBusy = true; relayMessage = enable ? 'Preparando o encaminhamento e verificando a identidade do PC pela internet…' : 'Desativando o encaminhamento…'; relayActionUrl = null;
+    var epoch = S.authEpoch; var ownerId = C.deviceId;
+    paintInternet();
+    try {
+      var result = await api('/api/connect/internet/' + (enable ? 'enable' : 'disable'), {});
+      if (epoch !== S.authEpoch || !C.ready || !C.local || ownerId !== C.deviceId) return;
+      pairingGeneration++; C.pairing = null; C.pairingExpired = false; endpointDraft = null;
+      if (result.snapshot) acceptSnapshot(result.snapshot);
+      if (result.relay) C.security.internetRelay = result.relay;
+      relayMessage = enable ? result.relay && result.relay.state === 'online' && result.relay.verified === true
+        ? 'Conexão pela internet verificada. Gere um novo QR code para conectar o celular por outra rede.'
+        : 'Encaminhamento configurado. A conexão externa ainda precisa ser verificada.'
+        : 'Encaminhamento desativado. O acesso pela rede local continua disponível.';
+    } catch (error) {
+      relayMessage = error.message;
+      try { var action = new URL(error.actionUrl); if (action.protocol === 'https:' && !action.username && !action.password) relayActionUrl = action.href; } catch (invalid) {}
+    } finally { relayBusy = false; endpointSignature = null; paintDevices(); }
   }
   function paintDevices() {
     if (C.dialog !== 'devices') return;
@@ -296,6 +427,7 @@
     var heading = $('connect-current'); if (heading) heading.textContent = C.playback && C.playback.activeDeviceId ? 'O som está em ' + activeName() : 'Escolha onde você quer ouvir';
     var pairing = $('connect-pairing'); if (pairing) pairing.innerHTML = pairingHtml();
     var verification = $('connect-verification'); if (verification) verification.innerHTML = verificationHtml();
+    paintInternet();
     var network = $('connect-network');
     if (network) network.addEventListener('change', function () { C.candidate = Number(network.value); paintDevices(); });
     paintCountdown();
@@ -305,7 +437,7 @@
     if (!countdown || !C.pairing) return;
     var seconds = Math.max(0, Math.ceil((C.pairing.expiresAt - Date.now()) / 1000));
     countdown.textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
-    if (!seconds) paintDevices();
+    if (!seconds) { C.pairing = null; C.pairingExpired = true; paintDevices(); }
   }
   function paintConnection() {
     var status = $('device-status');
@@ -320,9 +452,11 @@
   AC.openDevices = function () {
     if (!C.ready) { showPairingRequired(connectionPrompt()); return; }
     C.dialog = 'devices';
+    endpointSignature = null;
     AC.openModal('<div class="modal-head"><div><h2>Seus dispositivos</h2><p id="connect-current"></p></div><button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 20) + '</button></div>' +
       '<div class="connect-devices" id="connect-device-list"></div>' +
       '<div id="connect-verification"></div>' +
+      (C.local && mutualSecurity() ? '<section id="connect-internet" class="connect-pair-section"></section>' : '') +
       '<p class="connect-help"><a class="btn btn-ghost btn-sm" href="/downloads/acervo.apk">' + icon('download', 16) + ' Baixar APK Android</a></p>' +
       (canManage() ? '<div class="connect-pair-section"><h3>' + (mutualSecurity() ? 'Vincular seu celular' : 'Conectar outro dispositivo') + '</h3><div id="connect-pairing"></div></div>' : '<p class="connect-help">Biblioteca, fila e controles são compartilhados entre seus dispositivos. Escolha um dispositivo para transferir o som.</p>') +
       (C.cloud ? '<button class="btn btn-quiet btn-sm" data-action="connect-logout">Sair deste dispositivo</button>' : '') +
@@ -330,14 +464,19 @@
     paintDevices();
     if (canManage() && !phonePaired() && (!C.pairing || Date.now() >= C.pairing.expiresAt)) createPairing();
   };
-  function createPairing() {
-    if (!canManage() || phonePaired()) { paintDevices(); return Promise.resolve(); }
+  function createPairing(allowPaired) {
+    if (!canManage() || (phonePaired() && allowPaired !== true)) { paintDevices(); return Promise.resolve(); }
     if (creatingPairing) return creatingPairing;
+    var generation = pairingGeneration;
+    var pairedId = C.security && C.security.pairedDeviceId;
     creatingPairing = (async function () {
       var slot = $('connect-pairing'); if (slot) slot.innerHTML = '<p class="connect-status">Preparando QR code…</p>';
       try {
         var pairing = await api('/api/connect/pairing', {});
-        if (C.ready && canManage() && !phonePaired()) { C.pairing = pairing; C.candidate = 0; }
+        if (generation === pairingGeneration && C.ready && canManage()
+            && (!phonePaired() || (allowPaired === true && pairedId === C.security.pairedDeviceId))) {
+          C.pairing = pairing; C.pairingExpired = false; C.candidate = 0;
+        }
         paintDevices();
       } catch (err) { var error = $('connect-error'); if (error) error.textContent = err.message; }
       finally { creatingPairing = null; }
@@ -388,6 +527,10 @@
   AC.onModalClose = function () { C.dialog = null; };
   AC.playerActions['connect-devices'] = AC.openDevices;
   AC.playerActions['connect-create'] = createPairing;
+  AC.playerActions['connect-refresh-address'] = function () { return createPairing(true); };
+  AC.playerActions['connect-remove-endpoint'] = function () { return saveEndpoint(true); };
+  AC.playerActions['connect-internet-enable'] = function () { return manageInternet(true); };
+  AC.playerActions['connect-internet-disable'] = function () { return manageInternet(false); };
   AC.playerActions['connect-copy'] = copyLink;
   AC.playerActions['connect-retry'] = async function () {
     initialized = null;

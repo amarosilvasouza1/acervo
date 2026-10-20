@@ -224,11 +224,23 @@ public final class MobileLibrary {
 
     /** Copies an MP3 already served by the Acervo PC into the phone library for offline playback. */
     public Track importFile(String id, String title, String artist, long duration, File source) throws Exception {
+        return importFile(id, title, artist, duration, "", source);
+    }
+
+    public Track importFile(String id, String title, String artist, long duration, String thumbnail, File source) throws Exception {
         if (!validId(id)) throw new IOException("Música inválida.");
         if (source == null || !source.isFile() || source.length() == 0) throw new IOException("O arquivo baixado está vazio.");
-        synchronized (this) {
+        synchronized (store) {
             Track existing = get(id);
-            if (existing != null) return existing;
+            if (existing != null) {
+                if (thumbnail == null || thumbnail.isEmpty() || thumbnail.equals(existing.thumbnail)) return existing;
+                int index = tracks.indexOf(existing);
+                Track updated = new Track(existing.id, existing.title, existing.artist, thumbnail, existing.filename,
+                        existing.duration, existing.savedAt, existing.playedAt, existing.plays);
+                tracks.set(index, updated);
+                try { persist(); } catch (IOException failure) { tracks.set(index, existing); throw failure; }
+                return updated;
+            }
             if (audioFolder.getUsableSpace() < FREE_RESERVE + source.length()) {
                 throw new IOException("Não há espaço suficiente no celular para salvar esta música.");
             }
@@ -244,7 +256,7 @@ public final class MobileLibrary {
                 }
                 if (destination.exists() && !destination.delete()) throw new IOException("Não foi possível substituir o arquivo anterior.");
                 if (!partial.renameTo(destination)) throw new IOException("Não foi possível guardar o arquivo no celular.");
-                Track track = new Track(id, safe(title, "Música"), safe(artist, ""), "", destination.getName(),
+                Track track = new Track(id, safe(title, "Música"), safe(artist, ""), safe(thumbnail, ""), destination.getName(),
                         duration, System.currentTimeMillis(), 0, 0);
                 tracks.add(track);
                 try { persist(); } catch (IOException failure) { tracks.remove(track); destination.delete(); throw failure; }

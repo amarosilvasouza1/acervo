@@ -56,9 +56,40 @@ Na página inicial, as abas **Recomendadas**, **Novos lançamentos** e **Recente
 
 Clique no nome de um artista nas músicas, na busca ou no player para abrir seu perfil. O perfil reúne músicas salvas, faixas populares, discografia, artistas relacionados e, quando confirmada, uma biografia com atribuição à Wikipédia. Os dados externos vêm do catálogo Deezer; nomes e títulos locais ajudam a confirmar a identidade. Se o perfil não for confirmado, o app preserva as músicas locais e avisa. Contagens de fãs identificam sua fonte; não são ouvintes mensais do Acervo.
 
+Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a reprodução. O botão de três pontos abre os detalhes; o nome do artista abre seu perfil. Os perfis aceitam capas locais e preservam essa alternativa quando o catálogo não oferece uma foto válida do artista.
+
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.0
+## Novidades 1.5.4
+
+- O APK reaproveita conexões HTTPS e o contexto TLS do PC pareado, evitando repetir a negociação a cada capa e consulta. A identidade dos dois aparelhos continua sendo verificada.
+- O encaminhador Bore atende até 32 conexões simultâneas e mantém uma fila limitada a 32 pedidos por até quatro segundos para absorver a abertura da página. A latência do serviço público ainda pode afetar o acesso.
+
+## Histórico 1.5.3
+
+- O Android abre direto no Início e lembra se você estava usando o PC ou a biblioteca do celular. O leitor de QR fica em **Conexões**; voltar do Início não abre o pareamento.
+- A conexão ao PC só é lembrada depois da autenticação confirmada. O convite do QR continua temporário e não é salvo.
+- O modo do celular usa os mesmos padrões de navegação, cores, cartões, listas e player do modo conectado. As recomendações offline usam o histórico e as músicas salvas; pesquisas e novos downloads continuam dependendo de internet.
+- Ao salvar ou sincronizar músicas do PC, o celular guarda também a capa disponível para mostrar a mesma arte offline.
+
+## Histórico 1.5.2
+
+- Corrigida a autorização da chave do Android usada pelo TLS. Instale o APK 1.5.2 por cima da versão anterior e escaneie um QR novo para atualizar a identidade criada pelo 1.5.0.
+- Apenas uma instância pode usar a mesma pasta de dados. Isso impede gerar um convite em um servidor enquanto o endereço público encaminha para outro.
+- Convites continuam disponíveis em memória para tentar novamente após uma falha temporária; uma resposta de pareamento perdida é recuperada antes de reenviar o convite.
+- Erros de conexão no APK distinguem DNS, rede, tempo de resposta e autenticação, sem mostrar tokens ou detalhes privados.
+- O encaminhador mantém conexões ociosas e usa TCP keepalive; o prazo de abertura continua limitado.
+
+## Histórico 1.5.1 no PC
+
+- QR com 256 bits de aleatoriedade, expiração de cinco minutos e uso único. Solicitar outro invalida o anterior imediatamente, inclusive com gerações concorrentes.
+- **Dispositivos → Conectar pela internet** ativa um encaminhamento TCP que preserva a autenticação mútua. Use o APK 1.5.2 ou posterior, sem instalar Tailscale.
+- Verificação explícita do DNS público, identidade do PC e recusa de acesso sem a chave do celular. Um encaminhamento configurado ainda não é anunciado como verificado enquanto esse teste não passar.
+- Os atalhos `iniciar-internet.cmd` e `parar-internet.cmd` usam os controles do Acervo e preservam outros serviços já configurados no PC.
+
+Veja [conexão por outra rede](docs/internet.md). A biblioteca continua no PC; o acesso externo depende de ele estar ligado e de o serviço de encaminhamento estar disponível.
+
+## Histórico 1.5.0
 
 - Corrigido o envio parcial de áudio que podia interromper o APK conectado perto de 44 segundos. Pedidos `Range: bytes=0-` agora recebem a faixa até o fim.
 - Downloads e sincronização preservam título e artista da seleção. A consulta oficial oEmbed do YouTube oferece uma alternativa quando a extração de metadados falha.
@@ -112,11 +143,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.5.0 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR e identidade própria do telefone. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.5.4 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR e identidade própria do telefone. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.0.apk](releases/acervo-1.5.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
+Instale [releases/acervo-1.5.4.apk](releases/acervo-1.5.4.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

@@ -84,6 +84,28 @@ test('recent falls back to recorded lastPlayedAt only when no history exists, ne
   assert.equal(calls.length, 0);
 });
 
+test('artist cards use stored covers and recover an image from later tracks by the same artist', async () => {
+  const { service, calls } = fixture({ tracks: [
+    { ...LOCAL, id: 'no-cover', thumbnail: '', hasCover: false },
+    { ...LOCAL, id: 'with-cover', thumbnail: '', hasCover: true }
+  ], history: [
+    { trackId: 'no-cover', playedAt: '2026-10-18T13:00:00Z' },
+    { trackId: 'with-cover', playedAt: '2026-10-18T12:00:00Z' }
+  ] });
+  const result = await service.explore('recent');
+  assert.deepEqual(result.artists, [{ name: LOCAL.artist, picture: '/api/cover/with-cover' }]);
+  assert.equal(calls.length, 0);
+});
+
+test('recommendation image cache changes when a stored cover becomes available', async () => {
+  let runs = 0;
+  const data = fixture({ tracks: [{ ...LOCAL, thumbnail: '', hasCover: false }], radio: async () => { runs++; return {}; } });
+  assert.equal((await data.service.explore('recommended')).artists[0].picture, undefined);
+  data.setTracks([{ ...LOCAL, thumbnail: '', hasCover: true }]);
+  assert.equal((await data.service.explore('recommended')).artists[0].picture, '/api/cover/' + LOCAL.id);
+  assert.equal(runs, 2);
+});
+
 test('recommendations preserve real partial results, sanitize tracks and cache without mutating the library', async () => {
   let searches = 0;
   const { service, calls } = fixture({ radio: async (input, dependencies) => {
@@ -317,6 +339,26 @@ test('image and source URLs cannot be replaced by arbitrary provider links or cr
   assert.equal(result.followers, undefined);
   assert.equal(result.relatedArtists[0].picture, '');
   assert.equal(result.relatedArtists[0].sourceUrl, 'https://www.deezer.com/artist/43');
+});
+
+test('missing Deezer image hashes preserve the available local artist cover', async () => {
+  const { service } = fixture({ tracks: [{ ...LOCAL, thumbnail: '', hasCover: true }], responses: url => {
+    if (url.pathname === '/artist/42') return { ...DEEZER_ARTIST,
+      picture_xl: 'https://cdn-images.dzcdn.net/images/artist//1000x1000-000000-80-0-0.jpg',
+      picture_big: 'https://cdn-images.dzcdn.net/images/artist//500x500-000000-80-0-0.jpg',
+      picture: 'https://api.deezer.com/artist/42/image' };
+    return undefined;
+  } });
+  const result = await service.artist(LOCAL.artist);
+  assert.equal(result.catalogMatched, true);
+  assert.equal(result.picture, '/api/cover/' + LOCAL.id);
+  assert.equal(result.sourceUrl, 'https://www.deezer.com/artist/42');
+});
+
+test('artist pictures fall back to a valid smaller provider image', async () => {
+  const { service } = fixture({ responses: url => url.pathname === '/artist/42' ? { ...DEEZER_ARTIST,
+    picture_xl: 'https://cdn-images.dzcdn.net/images/artist//1000x1000.jpg', picture_big: IMAGE } : undefined });
+  assert.equal((await service.artist(LOCAL.artist)).picture, IMAGE);
 });
 
 test('new releases require real calendar release dates within the last 90 days, never import or upload dates', async () => {

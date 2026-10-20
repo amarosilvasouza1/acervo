@@ -40,6 +40,34 @@ test('exploration starts with a skeleton, then paints actual catalog items witho
   assert.doesNotMatch(h.feed(), /aria-busy/);
 });
 
+test('artist pictures accept saved cover paths without accepting other local routes or unsafe URLs', async () => {
+  const h = setup();
+  const pictures = ['/api/cover/artist-cover', 'https://cdn-images.dzcdn.net/images/artist/real/500.jpg', '/api/library', '/api/cover/../secret', '/api/cover/%2fsecret', '//other.example/photo.jpg', 'javascript:alert(1)'];
+  h.setApi(async () => ({ items: [], artists: pictures.map((picture, index) => ({ name: 'Artista ' + index, picture })) }));
+  await h.AC.mountExplore('recommended');
+  assert.match(h.feed(), /src="\/api\/cover\/artist-cover"/);
+  assert.match(h.feed(), /src="https:\/\/cdn-images\.dzcdn\.net/);
+  assert.equal((h.feed().match(/<img /g) || []).length, 2);
+  h.AC.state.view = 'artist'; h.AC.state.artistName = 'Artista local';
+  h.setApi(async () => ({ name: 'Artista local', picture: '/api/cover/artist-cover', localTracks: [] }));
+  await h.AC.mountArtist('Artista local');
+  assert.match(h.artist(), /class="artist-hero-picture"><img src="\/api\/cover\/artist-cover"/);
+});
+
+test('catalog card name and cover use the same play action as its button, with independent artist navigation', async () => {
+  const h = setup();
+  h.AC.state.tracks = [{ id: 'local-track', videoId: 'abcdefghijk', title: 'Saved music', artist: 'Artista' }];
+  h.setApi(async () => ({ items: [song({ id: 'local-track', title: 'Saved music' }), song({ title: 'Catalog only' })] }));
+  await h.AC.mountExplore('recommended');
+  assert.match(h.feed(), /<article class="catalog-card"[^>]*data-action="explore-play"[^>]*data-explore-key="feed:recommended:0"/);
+  assert.match(h.feed(), /<article class="catalog-card"[^>]*data-action="catalog-search"[^>]*data-explore-key="feed:recommended:1"/);
+  h.AC.playerActions['explore-play'](element({ 'data-explore-key': 'feed:recommended:0' }));
+  assert.deepEqual(h.played, ['local-track']); assert.equal(h.AC.state.view, 'explore');
+  h.AC.playerActions['open-artist'](element({ 'data-artist': 'Artista' }));
+  assert.equal(h.AC.state.view, 'artist'); assert.equal(h.AC.state.artistName, 'Artista');
+  assert.deepEqual(h.played, ['local-track']);
+});
+
 test('a late feed cannot overwrite a newer section even if the API ignores abort', async () => {
   const h = setup(), old = deferred();
   h.setApi(path => path.includes('recommended') ? old.promise : Promise.resolve({ items: [song({ title: 'Lançamento novo' })] }));

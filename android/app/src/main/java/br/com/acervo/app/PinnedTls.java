@@ -16,6 +16,7 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
+import javax.net.ssl.HostnameVerifier;
 
 /** Per-connection TLS; the exact public key comes from the QR, never from the network. */
 public final class PinnedTls {
@@ -43,7 +44,11 @@ public final class PinnedTls {
 
     /** The client identity proves possession of the paired phone's private key during TLS. */
     public static void configure(HttpsURLConnection connection, String host, String pin, KeyManager[] clientIdentity) throws GeneralSecurityException {
-        if (!validPin(pin) || host == null || !host.equalsIgnoreCase(connection.getURL().getHost())) throw new GeneralSecurityException("Identidade TLS inválida.");
+        createSession(host, pin, clientIdentity).configure(connection);
+    }
+
+    public static Session createSession(String host, String pin, KeyManager[] clientIdentity) throws GeneralSecurityException {
+        if (!validPin(pin) || host == null || host.isEmpty()) throw new GeneralSecurityException("Identidade TLS inválida.");
         X509TrustManager trust = new X509TrustManager() {
             public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
             public void checkClientTrusted(X509Certificate[] chain, String authType) throws CertificateException { throw new CertificateException("Client certificates unsupported."); }
@@ -56,15 +61,39 @@ public final class PinnedTls {
         };
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(clientIdentity, new TrustManager[] { trust }, null);
-        connection.setSSLSocketFactory(new ModernSocketFactory(context.getSocketFactory()));
-        connection.setHostnameVerifier((requested, session) -> {
+        HostnameVerifier verifier = (requested, session) -> {
             if (!host.equalsIgnoreCase(requested)) return false;
             try {
                 X509Certificate certificate = (X509Certificate) session.getPeerCertificates()[0];
                 certificate.checkValidity();
                 return matches(pin, certificate);
             } catch (Exception failure) { return false; }
-        });
+        };
+        return new Session(host, context, new ModernSocketFactory(context.getSocketFactory()), verifier);
+    }
+
+    public static final class Session {
+        private final String host;
+        private final SSLContext context;
+        private final SSLSocketFactory factory;
+        private final HostnameVerifier verifier;
+        private boolean invalidated;
+        private Session(String serverHost, SSLContext tls, SSLSocketFactory sockets, HostnameVerifier hostname) {
+            host = serverHost; context = tls; factory = sockets; verifier = hostname;
+        }
+        public synchronized void configure(HttpsURLConnection connection) throws GeneralSecurityException {
+            if (invalidated || !host.equalsIgnoreCase(connection.getURL().getHost()) || !"https".equalsIgnoreCase(connection.getURL().getProtocol())) throw new GeneralSecurityException("Identidade TLS inválida.");
+            connection.setSSLSocketFactory(factory);
+            connection.setHostnameVerifier(verifier);
+        }
+        public synchronized void invalidate() {
+            invalidated = true;
+            java.util.Enumeration<byte[]> identifiers = context.getClientSessionContext().getIds();
+            while (identifiers.hasMoreElements()) {
+                javax.net.ssl.SSLSession session = context.getClientSessionContext().getSession(identifiers.nextElement());
+                if (session != null) session.invalidate();
+            }
+        }
     }
 
     /** Explicitly suppresses TLS 1.0/1.1 without changing process-wide SSL defaults. */
@@ -82,6 +111,7 @@ public final class PinnedTls {
         }
         public String[] getDefaultCipherSuites() { return delegate.getDefaultCipherSuites(); }
         public String[] getSupportedCipherSuites() { return delegate.getSupportedCipherSuites(); }
+        public Socket createSocket() throws IOException { return modern(delegate.createSocket()); }
         public Socket createSocket(Socket socket, String host, int port, boolean close) throws IOException { return modern(delegate.createSocket(socket, host, port, close)); }
         public Socket createSocket(String host, int port) throws IOException { return modern(delegate.createSocket(host, port)); }
         public Socket createSocket(String host, int port, InetAddress local, int localPort) throws IOException { return modern(delegate.createSocket(host, port, local, localPort)); }

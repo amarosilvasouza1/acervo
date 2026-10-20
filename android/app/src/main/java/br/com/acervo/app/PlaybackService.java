@@ -61,6 +61,7 @@ public final class PlaybackService extends Service {
     }
 
     static void hide(Context context) {
+        if (controls != null && controls != context) return;
         context.stopService(new Intent(context, PlaybackService.class));
     }
 

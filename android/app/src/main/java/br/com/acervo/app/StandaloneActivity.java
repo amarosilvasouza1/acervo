@@ -41,9 +41,9 @@ import android.widget.SeekBar;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.FrameLayout;
 import java.io.InputStream;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.net.HttpURLConnection;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -63,6 +63,15 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private static final int CARD = Color.rgb(31, 31, 31);
     private static final int GREEN = Color.rgb(30, 215, 96);
     private static final int MUTED = Color.rgb(179, 179, 179);
+    private static final int MINI = Color.rgb(40, 45, 42);
+    private static final MobileUiModel.TrackInfo<MobileLibrary.Track> TRACK_INFO = new MobileUiModel.TrackInfo<MobileLibrary.Track>() {
+        public String id(MobileLibrary.Track track) { return track.id; }
+        public String title(MobileLibrary.Track track) { return track.title; }
+        public String artist(MobileLibrary.Track track) { return track.artist; }
+        public long savedAt(MobileLibrary.Track track) { return track.savedAt; }
+        public long playedAt(MobileLibrary.Track track) { return track.playedAt; }
+        public long plays(MobileLibrary.Track track) { return track.plays; }
+    };
     private enum Mode { HOME, SEARCH, LIBRARY, RADIO, ARTIST }
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService work = Executors.newFixedThreadPool(3);
@@ -97,6 +106,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private AudioFocusRequest audioFocus;
     private Mode mode = Mode.HOME;
     private Mode artistOrigin = Mode.HOME;
+    private MobileUiModel.HomeFilter homeFilter = MobileUiModel.HomeFilter.ALL;
+    private String libraryQuery = "";
     private String artistName = "";
     private int playRequest;
     private boolean destroyed, preparing, seeking, foreground, playRecorded, askedNotifications;
@@ -145,18 +156,22 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         LinearLayout root = column();
         root.setBackgroundColor(BG);
         LinearLayout header = row();
-        header.setPadding(dp(20), dp(8), dp(12), dp(8));
-        TextView title = text("acervo", 25, Color.WHITE, true);
+        header.setPadding(dp(16), dp(8), dp(8), dp(8));
+        ImageView brand = new ImageView(this);
+        brand.setImageResource(R.drawable.ic_acervo);
+        header.addView(brand, new LinearLayout.LayoutParams(dp(28), dp(28)));
+        TextView title = text("acervo", 23, Color.WHITE, true);
+        title.setPadding(dp(8), 0, 0, 0);
         header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         Button update = iconButton("update", "Atualizar aplicativo", false);
         update.setOnClickListener(v -> AppUpdater.check(this, getSharedPreferences("acervo_connection", MODE_PRIVATE).getString("server_origin", null)));
         header.addView(update);
         Button connect = iconButton("connect", "Conexões com o computador", false);
-        connect.setOnClickListener(v -> finish());
+        connect.setOnClickListener(v -> showConnections());
         header.addView(connect);
         root.addView(header);
         searchRow = row();
-        searchRow.setPadding(dp(20), dp(4), dp(20), dp(12));
+        searchRow.setPadding(dp(16), dp(4), dp(16), dp(12));
         query = new EditText(this);
         query.setTextColor(Color.WHITE);
         query.setHintTextColor(MUTED);
@@ -178,14 +193,15 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         searchRow.addView(searchButton, searchParams);
         root.addView(searchRow);
         status = text("", 12, MUTED, false);
-        status.setPadding(dp(20), 0, dp(20), dp(8));
+        status.setPadding(dp(16), 0, dp(16), dp(8));
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
         pageScroll = new ScrollView(this);
+        pageScroll.setBackgroundColor(SURFACE);
         pageScroll.setFillViewport(true);
         pageScroll.setClipToPadding(false);
         content = column();
-        content.setPadding(dp(20), dp(8), dp(20), dp(28));
+        content.setPadding(dp(16), dp(8), dp(16), dp(28));
         pageScroll.addView(content);
         root.addView(pageScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         buildPlayer(root);
@@ -194,10 +210,16 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         ScreenInsets.apply(this, root);
     }
 
+    private void showConnections() {
+        startActivity(new Intent(this, MainActivity.class).putExtra(MainActivity.EXTRA_SHOW_CONNECTIONS, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        finish();
+    }
+
     private void buildNavigation(LinearLayout root) {
         LinearLayout tabs = row();
-        tabs.setBackgroundColor(BG);
-        tabs.setPadding(dp(4), dp(5), dp(4), dp(5));
+        tabs.setBackgroundColor(Color.rgb(17, 17, 17));
+        tabs.setPadding(dp(8), dp(4), dp(8), dp(4));
         Mode[] modes = { Mode.HOME, Mode.SEARCH, Mode.LIBRARY, Mode.RADIO };
         String[] labels = { "Início", "Buscar", "Biblioteca", "Rádio" };
         String[] icons = { "home", "search", "library", "radio" };
@@ -205,17 +227,18 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             final Mode target = modes[i];
             LinearLayout tab = column();
             tab.setGravity(Gravity.CENTER);
-            tab.setBackground(rounded(BG, 8));
+            tab.setBackground(rounded(Color.TRANSPARENT, 8));
             tab.setContentDescription(labels[i]);
             tab.setFocusable(true);
             ImageView icon = new ImageView(this);
             icon.setImageDrawable(new AcervoIcon(icons[i], MUTED));
-            tab.addView(icon, new LinearLayout.LayoutParams(dp(23), dp(23)));
-            TextView label = text(labels[i], 10, MUTED, true);
+            tab.addView(icon, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            TextView label = text(labels[i], 10, MUTED, false);
             LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(-2, -2);
             labelParams.topMargin = dp(5);
             tab.addView(label, labelParams);
             tab.setOnClickListener(v -> {
+                if (target == Mode.HOME) homeFilter = MobileUiModel.HomeFilter.ALL;
                 select(target);
                 if (target == Mode.RADIO && radioSeed.isEmpty()) {
                     MobileLibrary.Track recent = library.recent();
@@ -256,6 +279,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private void render() {
         content.removeAllViews();
         downloadLabels.clear();
+        status.setVisibility(View.VISIBLE);
         if (mode == Mode.HOME) renderHome();
         else if (mode == Mode.LIBRARY) renderLibrary();
         else if (mode == Mode.ARTIST) renderArtist();
@@ -263,39 +287,142 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     }
 
     private void renderHome() {
-        List<MobileLibrary.Track> tracks = library.all();
-        status.setText(online() ? "No seu celular · música em qualquer lugar" : "Você está offline · seus downloads continuam disponíveis");
-        add(content, text("Feito para o seu ritmo", 29, Color.WHITE, true), 0);
-        LinearLayout shortcuts = row();
-        addShortcut(shortcuts, "library", "Seus downloads", tracks.size() + " músicas no celular", () -> select(Mode.LIBRARY));
-        addShortcut(shortcuts, "radio", "Sua rádio", "A partir do que você ouve", () -> {
-            select(Mode.RADIO);
-            MobileLibrary.Track recent = library.recent();
-            if (recent != null) startRadio(recent.title, recent.artist, recent.id);
-        });
-        add(content, shortcuts, 20);
-        if (tracks.isEmpty()) {
-            LinearLayout welcome = column();
-            welcome.setPadding(dp(20), dp(24), dp(20), dp(24));
-            welcome.setBackground(rounded(SURFACE, 8));
-            add(welcome, text("Sua música, sempre com você", 24, Color.WHITE, true), 0);
-            add(welcome, text("Encontre suas favoritas, salve no celular e ouça mesmo sem internet ou computador.", 15, MUTED, false), 12);
-            Button discover = button("Encontrar músicas", true);
-            discover.setOnClickListener(v -> { select(Mode.SEARCH); query.requestFocus(); });
-            add(welcome, discover, 20);
-            add(content, welcome, 24);
+        MobileUiModel.Home<MobileLibrary.Track> home = MobileUiModel.home(library.all(), TRACK_INFO);
+        setStatus(online() ? "" : "Você está offline · suas músicas salvas continuam disponíveis");
+        addHomeFilters();
+        String title = homeFilter == MobileUiModel.HomeFilter.ALL
+                ? MobileUiModel.greeting(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY))
+                : homeFilter == MobileUiModel.HomeFilter.RECOMMENDED ? "Feitas para você"
+                : homeFilter == MobileUiModel.HomeFilter.RECENT ? "Ouvidas recentemente" : "Músicas salvas";
+        add(content, text(title, 26, Color.WHITE, true), 20);
+        if (homeFilter != MobileUiModel.HomeFilter.ALL) {
+            add(content, text(homeFilter == MobileUiModel.HomeFilter.RECOMMENDED
+                    ? "Suas favoritas e músicas salvas para ouvir de novo."
+                    : homeFilter == MobileUiModel.HomeFilter.RECENT ? "O que você ouviu neste celular."
+                    : "Disponíveis neste celular, mesmo sem internet.", 13, MUTED, false), 8);
+            List<MobileLibrary.Track> selection = home.selected(homeFilter);
+            if (selection.isEmpty()) {
+                addEmptyHome(homeFilter == MobileUiModel.HomeFilter.RECENT
+                        ? "Suas músicas recentes aparecem aqui" : "Sua próxima música favorita começa aqui",
+                        homeFilter == MobileUiModel.HomeFilter.RECENT
+                                ? "Dê play em uma música da sua biblioteca para continuar de onde parou."
+                                : "Busque uma música para começar seu acervo ou descubra novos sons na rádio.");
+            } else for (MobileLibrary.Track track : selection) add(content, savedRow(track), 2);
             return;
         }
-        List<MobileLibrary.Track> recent = new ArrayList<>();
-        for (MobileLibrary.Track track : tracks) if (track.playedAt > 0) recent.add(track);
-        Collections.sort(recent, (a, b) -> Long.compare(b.playedAt, a.playedAt));
-        if (!recent.isEmpty()) {
-            section("Ouvidas recentemente", "Continue de onde seu gosto deixou.");
-            addTrackRail(recent, 8);
+        if (home.saved.isEmpty()) {
+            addEmptyHome("Sua próxima música favorita começa aqui",
+                    "Busque uma música para começar seu acervo ou descubra novos sons na rádio.");
+        } else {
+            addQuickShortcuts(home.picks);
+            if (!home.recent.isEmpty()) {
+                sectionAction("Ouvidas recentemente", () -> selectHomeFilter(MobileUiModel.HomeFilter.RECENT));
+                addTrackRail(home.recent, 8);
+            }
+            sectionAction("Adicionadas recentemente", () -> select(Mode.LIBRARY));
+            addTrackRail(home.saved, 8);
         }
-        section("Salvas no seu celular", "Prontas para tocar com ou sem conexão.");
-        addTrackRail(tracks, 12);
-        section("Seus artistas", "Quem está na sua biblioteca.");
+        section("Descubra algo novo", "");
+        LinearLayout discovery = row();
+        addShortcut(discovery, "library", "Feitas para você", "Suas favoritas no celular", () -> selectHomeFilter(MobileUiModel.HomeFilter.RECOMMENDED));
+        addShortcut(discovery, "radio", "Sua próxima descoberta", "Uma rádio a partir do seu som", this::openRadio);
+        add(content, discovery, 14);
+        if (!home.saved.isEmpty()) addArtistRail(home.saved);
+    }
+
+    private void setStatus(String value) {
+        status.setText(value);
+        status.setVisibility(value.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    private void selectHomeFilter(MobileUiModel.HomeFilter filter) {
+        homeFilter = filter;
+        select(Mode.HOME);
+        pageScroll.smoothScrollTo(0, 0);
+    }
+
+    private void addHomeFilters() {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = row();
+        MobileUiModel.HomeFilter[] filters = MobileUiModel.HomeFilter.values();
+        String[] labels = { "Tudo", "Recomendadas", "Recentes", "Salvas" };
+        for (int index = 0; index < filters.length; index++) {
+            MobileUiModel.HomeFilter filter = filters[index];
+            boolean selected = homeFilter == filter;
+            Button chip = button(labels[index], selected);
+            chip.setTextSize(12);
+            chip.setTypeface(Typeface.DEFAULT, Typeface.NORMAL);
+            chip.setSelected(selected);
+            chip.setOnClickListener(view -> selectHomeFilter(filter));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-2, dp(40));
+            if (index > 0) params.leftMargin = dp(8);
+            chips.addView(chip, params);
+        }
+        scroll.addView(chips);
+        add(content, scroll, 0);
+    }
+
+    private void addEmptyHome(String title, String description) {
+        LinearLayout empty = column();
+        empty.setGravity(Gravity.CENTER_HORIZONTAL);
+        empty.setPadding(dp(12), dp(32), dp(12), dp(28));
+        ImageView icon = new ImageView(this);
+        icon.setImageDrawable(new AcervoIcon("radio", GREEN));
+        empty.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        TextView heading = text(title, 23, Color.WHITE, true);
+        heading.setGravity(Gravity.CENTER);
+        add(empty, heading, 20);
+        TextView body = text(description, 14, MUTED, false);
+        body.setGravity(Gravity.CENTER);
+        add(empty, body, 10);
+        Button search = button("Buscar músicas", true);
+        search.setOnClickListener(view -> { select(Mode.SEARCH); query.requestFocus(); });
+        add(empty, search, 22);
+        Button radio = button("Explorar a rádio", false);
+        radio.setOnClickListener(view -> openRadio());
+        add(empty, radio, 10);
+        add(content, empty, 0);
+    }
+
+    private void addQuickShortcuts(List<MobileLibrary.Track> tracks) {
+        for (int index = 0; index < tracks.size(); index += 2) {
+            LinearLayout shortcuts = row();
+            for (int column = 0; column < 2; column++) {
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(56), 1);
+                if (column > 0) params.leftMargin = dp(8);
+                if (index + column >= tracks.size()) {
+                    shortcuts.addView(new View(this), params);
+                    continue;
+                }
+                MobileLibrary.Track track = tracks.get(index + column);
+                LinearLayout shortcut = row();
+                shortcut.setBackground(rounded(Color.rgb(41, 41, 41), 5));
+                shortcut.setClipToOutline(true);
+                ImageView cover = artwork(track.thumbnail, 56);
+                shortcut.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
+                TextView label = text(track.title, 11, Color.WHITE, true);
+                label.setMaxLines(2);
+                label.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                label.setPadding(dp(8), 0, dp(8), 0);
+                shortcut.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+                shortcut.setFocusable(true);
+                shortcut.setContentDescription("Tocar " + track.title);
+                shortcut.setOnClickListener(view -> playSaved(track));
+                shortcuts.addView(shortcut, params);
+            }
+            add(content, shortcuts, index == 0 ? 16 : 8);
+        }
+    }
+
+    private void openRadio() {
+        select(Mode.RADIO);
+        MobileLibrary.Track recent = library.recent();
+        if (radioSeed.isEmpty() && recent != null) startRadio(recent.title, recent.artist, recent.id);
+    }
+
+    private void addArtistRail(List<MobileLibrary.Track> tracks) {
+        section("Seus artistas", "");
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
         LinearLayout artists = row();
@@ -309,8 +436,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             LinearLayout card = column();
             card.setGravity(Gravity.CENTER_HORIZONTAL);
             card.setPadding(dp(4), dp(8), dp(12), dp(8));
-            TextView avatar = artistAvatar(name, 78);
-            card.addView(avatar, new LinearLayout.LayoutParams(dp(78), dp(78)));
+            View avatar = artistAvatar(name, 112);
+            card.addView(avatar, new LinearLayout.LayoutParams(dp(112), dp(112)));
             TextView label = text(name, 13, Color.WHITE, true);
             label.setGravity(Gravity.CENTER);
             label.setMaxLines(2);
@@ -319,21 +446,34 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             card.setContentDescription("Ver artista " + name);
             card.setFocusable(true);
             card.setOnClickListener(v -> openArtist(name));
-            artists.addView(card, new LinearLayout.LayoutParams(dp(112), -2));
+            artists.addView(card, new LinearLayout.LayoutParams(dp(148), -2));
         }
         scroll.addView(artists);
         add(content, scroll, 12);
     }
 
     private void section(String title, String description) {
-        add(content, text(title, 22, Color.WHITE, true), 28);
+        add(content, text(title, 21, Color.WHITE, true), 28);
         if (description != null && !description.isEmpty()) add(content, text(description, 12, MUTED, false), 6);
+    }
+
+    private void sectionAction(String title, Runnable action) {
+        LinearLayout heading = row();
+        heading.addView(text(title, 21, Color.WHITE, true), new LinearLayout.LayoutParams(0, -2, 1));
+        TextView all = text("Mostrar tudo", 11, MUTED, true);
+        all.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        all.setPadding(dp(10), dp(12), 0, dp(12));
+        all.setMinHeight(dp(44));
+        all.setOnClickListener(view -> action.run());
+        heading.addView(all);
+        add(content, heading, 24);
     }
 
     private void addShortcut(LinearLayout parent, String icon, String title, String subtitle, Runnable action) {
         LinearLayout card = column();
-        card.setPadding(dp(12), dp(16), dp(10), dp(14));
+        card.setPadding(dp(16), dp(16), dp(16), dp(16));
         card.setBackground(rounded(CARD, 8));
+        card.setMinimumHeight(dp(140));
         ImageView image = new ImageView(this);
         image.setImageDrawable(new AcervoIcon(icon, Color.WHITE));
         card.addView(image, new LinearLayout.LayoutParams(dp(24), dp(24)));
@@ -355,21 +495,37 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         for (int i = 0; i < Math.min(limit, tracks.size()); i++) {
             MobileLibrary.Track track = tracks.get(i);
             LinearLayout tile = column();
-            tile.setPadding(0, dp(4), dp(14), dp(8));
-            ImageView cover = artwork(track.thumbnail, 140);
-            tile.addView(cover, new LinearLayout.LayoutParams(dp(140), dp(140)));
+            tile.setPadding(0, dp(4), 0, dp(8));
+            FrameLayout art = new FrameLayout(this);
+            ImageView cover = artwork(track.thumbnail, 148);
+            art.addView(cover, new FrameLayout.LayoutParams(-1, -1));
+            Button play = iconButton("play", "Tocar " + track.title, true);
+            play.setPadding(dp(7), dp(7), dp(7), dp(7));
+            play.setOnClickListener(view -> playSaved(track));
+            FrameLayout.LayoutParams playParams = new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.RIGHT | Gravity.BOTTOM);
+            playParams.setMargins(0, 0, dp(8), dp(8));
+            art.addView(play, playParams);
+            tile.addView(art, new LinearLayout.LayoutParams(dp(148), dp(148)));
             cover.setContentDescription("Ouvir " + track.title);
             cover.setOnClickListener(v -> playSaved(track));
-            TextView name = text(track.title, 14, Color.WHITE, true);
+            TextView name = text(track.title, 13, Color.WHITE, true);
             name.setMaxLines(2);
             name.setEllipsize(android.text.TextUtils.TruncateAt.END);
             name.setOnClickListener(v -> playSaved(track));
-            add(tile, name, 10);
+            LinearLayout heading = row();
+            heading.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+            Button more = iconButton("more", "Opções de " + track.title, false);
+            more.setPadding(dp(6), dp(6), dp(6), dp(6));
+            more.setOnClickListener(view -> showTrackOptions(track));
+            heading.addView(more, new LinearLayout.LayoutParams(dp(36), dp(36)));
+            add(tile, heading, 4);
             TextView artist = artistLink(track.artist, 12);
             artist.setMaxLines(1);
             artist.setEllipsize(android.text.TextUtils.TruncateAt.END);
             add(tile, artist, 5);
-            rail.addView(tile, new LinearLayout.LayoutParams(dp(154), -2));
+            LinearLayout.LayoutParams tileParams = new LinearLayout.LayoutParams(dp(148), -2);
+            if (i > 0) tileParams.leftMargin = dp(16);
+            rail.addView(tile, tileParams);
         }
         scroll.addView(rail);
         add(content, scroll, 12);
@@ -377,17 +533,14 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
 
     private void renderLibrary() {
         List<MobileLibrary.Track> tracks = library.all();
-        add(content, text("Sua biblioteca", 30, Color.WHITE, true), 0);
-        status.setText(online() ? "Seus downloads · disponíveis offline" : "Modo offline · tudo salvo neste celular");
+        add(content, text("Sua biblioteca", 26, Color.WHITE, true), 0);
+        setStatus(online() ? "" : "Você está offline · suas músicas salvas continuam disponíveis");
         long duration = 0;
         for (MobileLibrary.Track track : tracks) duration += track.duration;
         add(content, text(tracks.size() + (tracks.size() == 1 ? " música salva" : " músicas salvas")
                 + (duration > 0 ? " · " + durationText(duration) : ""), 13, MUTED, false), 10);
         if (tracks.isEmpty()) {
-            section("Vamos começar sua coleção", "Baixe uma música para ela aparecer aqui.");
-            Button discover = button("Encontrar músicas", true);
-            discover.setOnClickListener(v -> { select(Mode.SEARCH); query.requestFocus(); });
-            add(content, discover, 22);
+            addEmptyHome("Vamos começar sua coleção", "Baixe uma música para ela aparecer aqui.");
             return;
         }
         Button play = button("Reproduzir", true);
@@ -398,32 +551,65 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         order.setPadding(dp(16), 0, 0, 0);
         actions.addView(order);
         add(content, actions, 20);
-        for (MobileLibrary.Track track : tracks) add(content, savedRow(track), 8);
+        EditText filter = new EditText(this);
+        filter.setSingleLine(true);
+        filter.setTextColor(Color.WHITE);
+        filter.setHintTextColor(MUTED);
+        filter.setTextSize(14);
+        filter.setHint("Buscar na biblioteca");
+        filter.setContentDescription("Buscar na biblioteca");
+        filter.setBackground(rounded(CARD, 6));
+        filter.setPadding(dp(14), dp(10), dp(14), dp(10));
+        filter.setText(libraryQuery);
+        add(content, filter, 16);
+        LinearLayout rows = column();
+        add(content, rows, 16);
+        renderLibraryRows(rows, tracks);
+        filter.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence value, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence value, int start, int before, int count) {
+                libraryQuery = value.toString();
+                renderLibraryRows(rows, tracks);
+            }
+            @Override public void afterTextChanged(android.text.Editable value) { }
+        });
+        play.setOnClickListener(view -> {
+            List<MobileLibrary.Track> visible = MobileUiModel.filter(tracks, TRACK_INFO, libraryQuery);
+            if (!visible.isEmpty()) playSaved(visible.get(0));
+        });
+    }
+
+    private void renderLibraryRows(LinearLayout rows, List<MobileLibrary.Track> tracks) {
+        rows.removeAllViews();
+        List<MobileLibrary.Track> visible = MobileUiModel.filter(tracks, TRACK_INFO, libraryQuery);
+        if (visible.isEmpty()) add(rows, text("Nenhuma música encontrada na sua biblioteca.", 14, MUTED, false), 18);
+        else for (MobileLibrary.Track track : visible) add(rows, savedRow(track), 2);
     }
 
     private LinearLayout savedRow(MobileLibrary.Track track) {
         LinearLayout line = row();
-        line.setMinimumHeight(dp(76));
-        ImageView cover = artwork(track.thumbnail, 52);
-        line.addView(cover, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        line.setMinimumHeight(dp(64));
+        ImageView cover = artwork(track.thumbnail, 44);
+        line.addView(cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
         cover.setContentDescription("Ouvir " + track.title);
         cover.setOnClickListener(v -> playSaved(track));
         LinearLayout info = column();
-        info.setPadding(dp(12), dp(8), dp(4), dp(8));
-        TextView title = text(track.title, 15, playingTrack != null && track.id.equals(playingTrack.id) ? GREEN : Color.WHITE, true);
-        title.setMaxLines(2);
+        info.setPadding(dp(10), dp(8), dp(4), dp(8));
+        TextView title = text(track.title, 13, playingTrack != null && track.id.equals(playingTrack.id) ? GREEN : Color.WHITE, false);
+        title.setMaxLines(1);
         title.setEllipsize(android.text.TextUtils.TruncateAt.END);
         title.setOnClickListener(v -> playSaved(track));
         info.addView(title);
-        TextView artist = artistLink(track.artist, 12);
-        add(info, artist, 5);
-        TextView meta = text("Salva" + (track.duration > 0 ? " · " + time(track.duration) : ""), 10, MUTED, false);
-        add(info, meta, 4);
+        TextView artist = artistLink(track.artist, 11);
+        artist.setMaxLines(1);
+        artist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        add(info, artist, 2);
         info.setOnClickListener(v -> playSaved(track));
         line.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
         Button more = iconButton("more", "Opções de " + track.title, false);
         more.setOnClickListener(v -> showTrackOptions(track));
-        line.addView(more);
+        line.addView(more, new LinearLayout.LayoutParams(dp(44), dp(44)));
+        line.setOnClickListener(view -> playSaved(track));
         return line;
     }
 
@@ -431,8 +617,11 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         radioPlayback = false;
         radioQueue.clear();
         radioIndex = -1;
+        MobileUiModel.Home<MobileLibrary.Track> home = MobileUiModel.home(library.all(), TRACK_INFO);
+        List<MobileLibrary.Track> selection = mode == Mode.HOME ? home.selected(homeFilter) : home.saved;
+        if (mode == Mode.LIBRARY) selection = MobileUiModel.filter(selection, TRACK_INFO, libraryQuery);
         localQueue = new ArrayList<>();
-        for (MobileLibrary.Track candidate : library.all()) {
+        for (MobileLibrary.Track candidate : selection) {
             if (mode != Mode.ARTIST || (candidate.artist != null && artistName.equalsIgnoreCase(candidate.artist.trim()))) localQueue.add(candidate);
         }
         playRequest++;
@@ -465,9 +654,9 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         LinearLayout hero = column();
         hero.setGravity(Gravity.CENTER_HORIZONTAL);
         hero.setPadding(dp(16), dp(12), dp(16), dp(24));
-        TextView avatar = artistAvatar(artistName, 112);
-        hero.addView(avatar, new LinearLayout.LayoutParams(dp(112), dp(112)));
-        TextView name = text(artistName, 30, Color.WHITE, true);
+        View avatar = artistAvatar(artistName, 160);
+        hero.addView(avatar, new LinearLayout.LayoutParams(dp(160), dp(160)));
+        TextView name = text(artistName, 38, Color.WHITE, true);
         name.setGravity(Gravity.CENTER);
         add(hero, name, 18);
         TextView label = text("NA SUA BIBLIOTECA", 10, MUTED, true);
@@ -510,14 +699,33 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 + "As informações vêm dos arquivos salvos neste celular. O perfil continua disponível offline.", 14, MUTED, false), 12);
     }
 
-    private TextView artistAvatar(String name, int size) {
+    private View artistAvatar(String name, int size) {
         String[] words = name.trim().split("\\s+");
         String first = words.length == 0 || words[0].isEmpty() ? "♪" : words[0].substring(0, words[0].offsetByCodePoints(0, 1));
         String last = words.length > 1 ? words[words.length - 1].substring(0, words[words.length - 1].offsetByCodePoints(0, 1)) : "";
-        TextView avatar = text((first + last).toUpperCase(java.util.Locale.ROOT), size / 3, Color.WHITE, true);
-        avatar.setGravity(Gravity.CENTER);
+        FrameLayout avatar = new FrameLayout(this);
         avatar.setBackground(rounded(CARD, size));
+        avatar.setClipToOutline(true);
         avatar.setContentDescription("Artista " + name);
+        TextView initials = text((first + last).toUpperCase(java.util.Locale.ROOT), size / 3, Color.WHITE, true);
+        initials.setGravity(Gravity.CENTER);
+        avatar.addView(initials, new FrameLayout.LayoutParams(-1, -1));
+        String thumbnail = null;
+        for (MobileLibrary.Track track : library.all()) {
+            if (track.artist != null && name.equalsIgnoreCase(track.artist.trim())
+                    && track.thumbnail != null && track.thumbnail.startsWith("https://")) {
+                if (thumbnail == null) thumbnail = track.thumbnail;
+                try {
+                    if (artworkFile(track.thumbnail).isFile()) { thumbnail = track.thumbnail; break; }
+                } catch (Exception ignored) { }
+            }
+        }
+        if (thumbnail != null) {
+            ImageView cover = new ImageView(this);
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            avatar.addView(cover, new FrameLayout.LayoutParams(-1, -1));
+            loadCover(cover, thumbnail);
+        }
         return avatar;
     }
 
@@ -534,7 +742,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     }
 
     private void renderResults() {
-        add(content, text(mode == Mode.RADIO ? "Sua rádio, ao vivo" : "Encontre seu próximo som", 28, Color.WHITE, true), 0);
+        add(content, text(mode == Mode.RADIO ? "Sua rádio" : "Buscar", 26, Color.WHITE, true), 0);
         if (mode == Mode.RADIO) {
             add(content, text(radioSeed.isEmpty() ? "Escolha uma música ou use o que ouviu recentemente." : "A partir de " + radioSeed, 14, MUTED, false), 8);
             MobileLibrary.Track recent = library.recent();
@@ -548,35 +756,73 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             status.setText(!online() ? "Sem internet · ouça seus downloads na Biblioteca."
                     : mode == Mode.RADIO ? "Novas sugestões são buscadas pela internet do celular." : "Busca e downloads usam a internet deste celular.");
             add(content, text(mode == Mode.RADIO ? "Defina o ponto de partida acima para buscar músicas semelhantes." : "Digite um artista, uma música ou cole um link do YouTube.", 15, MUTED, false), 28);
+            if (mode == Mode.SEARCH) {
+                section("O que você quer ouvir?", "");
+                LinearLayout browse = row();
+                addShortcut(browse, "library", "Sua biblioteca", "Suas músicas salvas", () -> select(Mode.LIBRARY));
+                addShortcut(browse, "radio", "Descobrir na rádio", "A partir do seu som", this::openRadio);
+                add(content, browse, 14);
+            }
             return;
         }
         status.setText(results.size() + (online() ? " resultados · internet do celular" : " resultados anteriores · você está offline"));
         for (MobileSource.Song song : results) {
-            LinearLayout card = songCard(song.title, song.artist, song.thumbnail, song.duration);
-            LinearLayout actions = row();
             MobileLibrary.Track saved = library.get(song.id);
-            if (saved != null) {
-                Button play = button("Ouvir offline", true);
-                play.setOnClickListener(v -> { if (mode == Mode.RADIO) playRadioSaved(song, saved); else playSaved(saved); });
-                actions.addView(play);
-            } else {
-                Button save = button("Baixar", false);
-                save.setOnClickListener(v -> download(song, false));
-                actions.addView(save);
-                Button listen = button("Baixar e ouvir", true);
-                listen.setOnClickListener(v -> { if (mode == Mode.RADIO) listenRadio(song); else { radioPlayback = false; download(song, true); } });
-                actions.addView(listen);
-            }
-            Button radio = button("Rádio", false);
-            radio.setOnClickListener(v -> startRadio(song.title, song.artist, song.id));
-            actions.addView(radio);
-            add(card, actions, 12);
-            TextView downloadStatus = text(saved != null ? "Salva neste celular" : progress.getOrDefault(song.id, ""), 12, saved != null ? GREEN : MUTED, false);
+            LinearLayout line = row();
+            line.setMinimumHeight(dp(64));
+            ImageView cover = artwork(song.thumbnail, 44);
+            cover.setContentDescription("Tocar " + song.title);
+            cover.setOnClickListener(view -> listenSong(song));
+            line.addView(cover, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            LinearLayout description = column();
+            description.setPadding(dp(10), dp(8), dp(4), dp(8));
+            TextView title = text(song.title, 13, Color.WHITE, false);
+            title.setMaxLines(2);
+            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            title.setOnClickListener(view -> listenSong(song));
+            description.addView(title);
+            TextView artist = artistLink(song.artist, 11);
+            artist.setMaxLines(1);
+            artist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            add(description, artist, 2);
+            TextView downloadStatus = text(progress.getOrDefault(song.id, ""), 10, MUTED, false);
+            downloadStatus.setVisibility(downloadStatus.length() == 0 ? View.GONE : View.VISIBLE);
             downloadStatus.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
             downloadLabels.put(song.id, downloadStatus);
-            add(card, downloadStatus, 6);
-            add(content, card, 14);
+            add(description, downloadStatus, 2);
+            description.setOnClickListener(view -> listenSong(song));
+            line.addView(description, new LinearLayout.LayoutParams(0, -2, 1));
+            Button save = iconButton(saved == null ? "download" : "play", saved == null ? "Baixar " + song.title : "Tocar " + song.title, false);
+            if (saved != null) setIcon(save, "play", GREEN);
+            save.setOnClickListener(view -> { if (saved == null) download(song, false); else listenSong(song); });
+            line.addView(save, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            Button more = iconButton("more", "Opções de " + song.title, false);
+            more.setOnClickListener(view -> showSongOptions(song));
+            line.addView(more, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            line.setOnClickListener(view -> listenSong(song));
+            add(content, line, 2);
         }
+    }
+
+    private void listenSong(MobileSource.Song song) {
+        MobileLibrary.Track saved = library.get(song.id);
+        if (saved != null) {
+            if (mode == Mode.RADIO) playRadioSaved(song, saved);
+            else playSaved(saved);
+        } else if (mode == Mode.RADIO) listenRadio(song);
+        else { radioPlayback = false; download(song, true); }
+    }
+
+    private void showSongOptions(MobileSource.Song song) {
+        MobileLibrary.Track saved = library.get(song.id);
+        if (saved != null) { showTrackOptions(saved); return; }
+        new AlertDialog.Builder(this).setTitle(song.title)
+                .setItems(new String[] { "Baixar e ouvir", "Baixar", "Ver artista", "Iniciar rádio" }, (dialog, choice) -> {
+                    if (choice == 0) listenSong(song);
+                    else if (choice == 1) download(song, false);
+                    else if (choice == 2) openArtist(song.artist);
+                    else startRadio(song.title, song.artist, song.id);
+                }).show();
     }
 
     private void runInput() {
@@ -710,30 +956,10 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
 
     private void setProgress(String id, String value) {
         progress.put(id, value);
-        post(() -> { TextView label = downloadLabels.get(id); if (label != null) label.setText(value); });
-    }
-
-    private LinearLayout songCard(String title, String artist, String thumbnail, long duration) {
-        LinearLayout card = column();
-        card.setBackground(rounded(SURFACE, 8));
-        card.setPadding(dp(14), dp(14), dp(14), dp(10));
-        LinearLayout details = row();
-        ImageView cover = artwork(thumbnail, 56);
-        details.addView(cover, new LinearLayout.LayoutParams(dp(56), dp(56)));
-        LinearLayout description = column();
-        description.setPadding(dp(12), 0, 0, 0);
-        TextView name = text(title, 16, Color.WHITE, true);
-        name.setMaxLines(2);
-        name.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        description.addView(name);
-        TextView by = artistLink(artist, 12);
-        by.setMaxLines(1);
-        by.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        add(description, by, 5);
-        if (duration > 0) add(description, text(time(duration), 10, MUTED, false), 2);
-        details.addView(description, new LinearLayout.LayoutParams(0, -2, 1));
-        card.addView(details);
-        return card;
+        post(() -> {
+            TextView label = downloadLabels.get(id);
+            if (label != null) { label.setText(value); label.setVisibility(value.isEmpty() ? View.GONE : View.VISIBLE); }
+        });
     }
 
     private ImageView artwork(String url, int size) {
@@ -758,7 +984,11 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 File cachedFile = artworkFile(url);
                 synchronized (coverCache) {
                     if (cachedFile.isFile()) {
-                        Bitmap image = BitmapFactory.decodeFile(cachedFile.getAbsolutePath());
+                        BitmapFactory.Options bounds = new BitmapFactory.Options();
+                        bounds.inJustDecodeBounds = true;
+                        BitmapFactory.decodeFile(cachedFile.getAbsolutePath(), bounds);
+                        BitmapFactory.Options options = coverOptions(bounds.outWidth, bounds.outHeight);
+                        Bitmap image = BitmapFactory.decodeFile(cachedFile.getAbsolutePath(), options);
                         if (image != null) {
                             coverCache.put(url, image);
                             post(() -> { if (url.equals(target.getTag())) target.setImageBitmap(image); });
@@ -774,22 +1004,12 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 bounds.inJustDecodeBounds = true;
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return;
-                BitmapFactory.Options options = new BitmapFactory.Options();
-                while (bounds.outWidth / Math.max(1, options.inSampleSize) > 256 || bounds.outHeight / Math.max(1, options.inSampleSize) > 256) {
-                    options.inSampleSize = options.inSampleSize == 0 ? 2 : options.inSampleSize * 2;
-                }
+                BitmapFactory.Options options = coverOptions(bounds.outWidth, bounds.outHeight);
                 Bitmap image = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
                 if (image == null) return;
                 coverCache.put(url, image);
                 try {
-                    File folder = cachedFile.getParentFile();
-                    if (folder != null && (folder.isDirectory() || folder.mkdirs())) {
-                        synchronized (coverCache) {
-                            try (FileOutputStream output = new FileOutputStream(cachedFile)) {
-                                image.compress(Bitmap.CompressFormat.JPEG, 85, output);
-                            }
-                        }
-                    }
+                    MobileArtworkCache.store(getFilesDir(), url, new java.io.ByteArrayInputStream(bytes));
                 } catch (Exception ignored) { /* A full artwork cache never prevents playback. */ }
                 post(() -> { if (url.equals(target.getTag())) target.setImageBitmap(image); });
             } catch (Exception ignored) { /* An unavailable cover never hides a playable song. */ }
@@ -798,24 +1018,28 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     }
 
     private File artworkFile(String url) throws Exception {
-        byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(url.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        StringBuilder key = new StringBuilder();
-        for (byte value : digest) key.append(String.format(java.util.Locale.ROOT, "%02x", value & 255));
-        return new File(new File(getFilesDir(), "mobile-artwork"), key + ".jpg");
+        return MobileArtworkCache.fileFor(getFilesDir(), url);
+    }
+
+    private BitmapFactory.Options coverOptions(int width, int height) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = 1;
+        while (width / options.inSampleSize > 512 || height / options.inSampleSize > 512) options.inSampleSize *= 2;
+        return options;
     }
 
     private void buildPlayer(LinearLayout root) {
         playerPanel = column();
-        playerPanel.setPadding(dp(8), dp(5), dp(8), 0);
+        playerPanel.setBackground(rounded(MINI, 8));
+        playerPanel.setPadding(0, 0, 0, 0);
         playerPanel.setVisibility(View.GONE);
         LinearLayout mini = row();
-        mini.setBackground(rounded(CARD, 8));
-        mini.setPadding(dp(8), dp(8), dp(4), dp(5));
-        playerCover = artwork("", 42);
-        mini.addView(playerCover, new LinearLayout.LayoutParams(dp(42), dp(42)));
+        mini.setPadding(dp(8), dp(6), dp(4), dp(4));
+        playerCover = artwork("", 44);
+        mini.addView(playerCover, new LinearLayout.LayoutParams(dp(44), dp(44)));
         LinearLayout info = column();
         info.setPadding(dp(10), 0, dp(4), 0);
-        playerTitle = text("", 13, Color.WHITE, true);
+        playerTitle = text("", 12, Color.WHITE, true);
         playerTitle.setMaxLines(1);
         playerTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         info.addView(playerTitle);
@@ -824,12 +1048,12 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         playerArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
         add(info, playerArtist, 4);
         mini.addView(info, new LinearLayout.LayoutParams(0, -2, 1));
+        Button connection = iconButton("connect", "Conexões e dispositivos", false);
+        connection.setOnClickListener(view -> showConnections());
+        mini.addView(connection, new LinearLayout.LayoutParams(dp(44), dp(44)));
         playButton = iconButton("play", "Reproduzir", false);
         playButton.setOnClickListener(v -> togglePlayback());
-        mini.addView(playButton, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        Button next = iconButton("next", "Próxima música", false);
-        next.setOnClickListener(v -> skip(1));
-        mini.addView(next, new LinearLayout.LayoutParams(dp(44), dp(48)));
+        mini.addView(playButton, new LinearLayout.LayoutParams(dp(44), dp(44)));
         mini.setContentDescription("Abrir reprodutor");
         mini.setOnClickListener(v -> openPlayer());
         info.setOnClickListener(v -> openPlayer());
@@ -838,11 +1062,13 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         miniProgress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         miniProgress.setMax(1000);
         miniProgress.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
-        miniProgress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
+        miniProgress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(Color.rgb(84, 88, 85)));
         LinearLayout.LayoutParams bar = new LinearLayout.LayoutParams(-1, dp(2));
         bar.setMargins(dp(8), 0, dp(8), 0);
         playerPanel.addView(miniProgress, bar);
-        root.addView(playerPanel);
+        LinearLayout.LayoutParams playerParams = new LinearLayout.LayoutParams(-1, -2);
+        playerParams.setMargins(dp(8), dp(6), dp(8), dp(8));
+        root.addView(playerPanel, playerParams);
     }
 
     private void openPlayer() {
@@ -851,13 +1077,15 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         Dialog dialog = new Dialog(this, android.R.style.Theme_Material_NoActionBar);
         expandedPlayer = dialog;
         LinearLayout page = column();
-        page.setBackgroundColor(SURFACE);
+        GradientDrawable playerBackground = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[] { Color.rgb(36, 50, 42), SURFACE });
+        page.setBackground(playerBackground);
         LinearLayout top = row();
         top.setPadding(dp(12), dp(12), dp(12), dp(12));
         Button collapse = iconButton("down", "Minimizar reprodutor", false);
         collapse.setOnClickListener(v -> dialog.dismiss());
         top.addView(collapse);
-        TextView source = text("TOCANDO NESTE CELULAR", 10, MUTED, true);
+        TextView source = text("TOCANDO AGORA", 10, MUTED, true);
         source.setGravity(Gravity.CENTER);
         top.addView(source, new LinearLayout.LayoutParams(0, -2, 1));
         Button more = iconButton("more", "Opções da música", false);
@@ -867,12 +1095,15 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         ScrollView scroll = new ScrollView(this);
         LinearLayout body = column();
         body.setPadding(dp(24), dp(8), dp(24), dp(24));
-        int size = Math.min(420, Math.max(160, Math.round(getResources().getDisplayMetrics().widthPixels / getResources().getDisplayMetrics().density) - 48));
+        float density = getResources().getDisplayMetrics().density;
+        int viewportWidth = Math.round(getResources().getDisplayMetrics().widthPixels / density);
+        int viewportHeight = Math.round(getResources().getDisplayMetrics().heightPixels / density);
+        int size = Math.min(380, Math.min(Math.max(160, viewportWidth - 48), Math.max(200, viewportHeight - 410)));
         expandedCover = artwork(playingTrack.thumbnail, size);
         LinearLayout.LayoutParams artParams = new LinearLayout.LayoutParams(dp(size), dp(size));
         artParams.gravity = Gravity.CENTER_HORIZONTAL;
         body.addView(expandedCover, artParams);
-        expandedTitle = text(playingTrack.title, 25, Color.WHITE, true);
+        expandedTitle = text(playingTrack.title, 26, Color.WHITE, true);
         expandedTitle.setMaxLines(3);
         expandedTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
         add(body, expandedTitle, 28);
@@ -881,7 +1112,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         add(body, expandedArtist, 8);
         seek = new SeekBar(this);
         seek.setMax(1000);
-        seek.setProgressTintList(android.content.res.ColorStateList.valueOf(GREEN));
+        seek.setProgressTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
         seek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(CARD));
         seek.setThumbTintList(android.content.res.ColorStateList.valueOf(Color.WHITE));
         seek.setContentDescription("Posição da música");
@@ -906,8 +1137,9 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         previous.setOnClickListener(v -> skip(-1));
         controls.addView(previous, new LinearLayout.LayoutParams(dp(64), dp(64)));
         expandedPlay = iconButton("play", "Reproduzir", true);
+        expandedPlay.setBackground(rounded(Color.WHITE, 48));
         expandedPlay.setOnClickListener(v -> togglePlayback());
-        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(dp(72), dp(72));
+        LinearLayout.LayoutParams playParams = new LinearLayout.LayoutParams(dp(64), dp(64));
         playParams.setMargins(dp(20), 0, dp(20), 0);
         controls.addView(expandedPlay, playParams);
         Button next = iconButton("next", "Próxima música", false);
@@ -921,7 +1153,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
             startRadio(playingTrack.title, playingTrack.artist, playingTrack.id);
         });
         add(body, radio, 28);
-        add(body, text("Áudio salvo no celular · disponível offline", 12, MUTED, false), 12);
+        add(body, text("Este celular · música salva para ouvir offline", 12, GREEN, false), 12);
         scroll.addView(body);
         page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         dialog.setContentView(page);
@@ -1227,6 +1459,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     @Override public void onBackPressed() {
         if (mode == Mode.ARTIST) select(artistOrigin);
         else if (mode != Mode.HOME) select(Mode.HOME);
+        else if (homeFilter != MobileUiModel.HomeFilter.ALL) selectHomeFilter(MobileUiModel.HomeFilter.ALL);
         else moveTaskToBack(true);
     }
     private LinearLayout column() { LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL); return layout; }
@@ -1245,6 +1478,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     }
     private Button iconButton(String icon, String description, boolean primary) {
         Button view = button("", primary);
+        view.setMinWidth(dp(44));
+        view.setMinimumWidth(dp(44));
         view.setContentDescription(description);
         if (!primary) view.setBackground(rounded(Color.TRANSPARENT, 32));
         else view.setBackground(rounded(GREEN, 48));
@@ -1257,7 +1492,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         view.setText("");
         view.setGravity(Gravity.CENTER);
         view.setCompoundDrawables(drawable, null, null, null);
-        view.setPadding(dp(12), dp(10), dp(12), dp(10));
+        view.setPadding(dp(10), dp(10), dp(10), dp(10));
     }
     private GradientDrawable rounded(int color, int radius) { GradientDrawable value = new GradientDrawable(); value.setColor(color); value.setCornerRadius(dp(radius)); return value; }
     private void add(LinearLayout parent, View child, int top) { LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(top); parent.addView(child, params); }

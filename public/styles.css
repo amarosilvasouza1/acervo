@@ -289,6 +289,9 @@ img { display: block; max-width: 100%; }
   -webkit-box-orient: vertical;
   line-height: 1.45;
 }
+.card-heading { display: flex; align-items: flex-start; gap: 4px; }
+.card-heading .card-title { flex: 1; min-width: 0; }
+.card-heading .card-details { flex: 0 0 28px; width: 28px; height: 28px; margin-top: -3px; }
 .card-artist { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .home-view .grid { grid-auto-flow: row; }
@@ -1021,11 +1024,12 @@ button[hidden] { display: none; }
   .empty { padding: 30px 16px; }
 }
 /* Discovery and artist pages use the same library, player and navigation. */
-.artist-link { padding: 0; text-align: left; max-width: 100%; color: var(--muted); }
+.artist-link { display: block; width: fit-content; padding: 0; text-align: left; max-width: 100%; color: var(--muted); }
 .artist-link:hover:not(:disabled) { color: #fff; text-decoration: underline; }
 .artist-link:disabled { cursor: default; }
 .card-artist.artist-link { font-size: 12px; }
-.player-title, .player-artist { width: 100%; padding: 0; text-align: left; }
+.player-title { width: 100%; padding: 0; text-align: left; }
+.player-artist.artist-link { width: fit-content; }
 .sidebar-track { cursor: pointer; }
 .discovery-shortcuts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .discovery-shortcuts > button { display: flex; align-items: center; gap: 20px; min-height: 100px; padding: 24px; border-radius: 8px; background: #202824; text-align: left; }

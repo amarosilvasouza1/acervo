@@ -27,7 +27,7 @@
     } catch (ignored) { return ''; }
   }
   function image(value, fallback, className) {
-    var url = safeUrl(value);
+    var url = typeof value === 'string' && /^\/api\/cover\/[A-Za-z0-9_-]{6,64}$/.test(value) ? value : safeUrl(value);
     return '<span class="' + className + '">' + (url
       ? '<img src="' + esc(url) + '" alt="" loading="lazy" referrerpolicy="no-referrer">'
       : '<span class="catalog-image-fallback" aria-hidden="true">' + AC.icon(fallback, 36) + '</span>') + '</span>';
@@ -62,6 +62,7 @@
   }
   function catalogCard(item, key, release) {
     var album = item.kind === 'album';
+    var playable = savedTrack(item) || /^[A-Za-z0-9_-]{11}$/.test(item.videoId || '');
     var saved = !album && savedTrack(item);
     var date = dateLabel(item.releaseDate);
     var thumb = safeUrl(item.thumbnail);
@@ -72,7 +73,7 @@
       ? '<button class="catalog-play" data-action="catalog-search" data-query="' + esc(queryFor(item)) + '" aria-label="Buscar álbum ' + esc(item.title) + '">' + AC.icon('search', 18) + '</button>'
       : playButton(item, key);
     var details = [album ? 'Álbum' : '', date || (release ? '' : item.duration ? AC.fmtTime(item.duration) : '')].filter(Boolean).join(' · ');
-    return '<article class="catalog-card"><div class="catalog-cover">' + cover + action + '</div>' +
+    return '<article class="catalog-card" role="button" tabindex="0" data-action="' + (!album && playable ? 'explore-play' : 'catalog-search') + '" data-explore-key="' + esc(key) + '" data-query="' + esc(queryFor(item)) + '" aria-label="' + esc((!album && playable ? 'Ouvir ' : 'Buscar para ouvir ') + item.title) + '"><div class="catalog-cover">' + cover + action + '</div>' +
       '<h3 class="catalog-title" title="' + esc(item.title) + '">' + esc(item.title) + '</h3>' + artistButton(item.artist) +
       (details ? '<p class="catalog-meta">' + esc(details) + '</p>' : '') +
       (saved ? '<span class="catalog-saved">' + AC.icon('check', 12) + ' No acervo</span>' : '') +

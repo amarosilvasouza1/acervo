@@ -4,6 +4,10 @@
 .connect-security strong { color: var(--accent); }
 .connect-security p { color: var(--muted); line-height: 1.6; }
 .connect-security code { display: block; line-height: 1.9; font-size: 11px; overflow-wrap: anywhere; color: #fff; }
+#connect-endpoint-form { display: flex; flex-direction: column; gap: 10px; }
+#connect-endpoint-form .seed-select { width: 100%; min-width: 0; font-size: 16px; }
+#connect-internet .connect-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#connect-internet .connect-help { overflow-wrap: anywhere; }
 .player-cover { padding: 0; }
 .player-meta { padding: 0; text-align: left; }
 .player-title, .player-artist { display: block; }

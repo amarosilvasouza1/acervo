@@ -220,11 +220,40 @@ public final class DeviceSync {
                     }
                     output.getFD().sync();
                 }
-                library.importFile(id, title(track.optString("title"), id), track.optString("artist"), track.optLong("duration"), temp);
+                library.importFile(id, title(track.optString("title"), id), track.optString("artist"), track.optLong("duration"), origin + "/api/cover/" + id, temp);
             } finally {
                 connection = null;
                 current.disconnect();
                 if (temp != null) temp.delete();
+            }
+            cacheCover(id);
+        }
+
+        void cacheCover(String id) {
+            if (stopped()) return;
+            HttpURLConnection current = null;
+            try {
+                String artworkUrl = origin + "/api/cover/" + id;
+                URL target = new URL(artworkUrl);
+                if (!PairingLink.isSameOrigin(artworkUrl, origin)) return;
+                current = SecureTransport.open(activity, target, origin);
+                connection = current;
+                current.setInstanceFollowRedirects(false);
+                current.setConnectTimeout(10000);
+                current.setReadTimeout(10000);
+                current.setRequestProperty("Accept", "image/*");
+                current.setRequestProperty("Accept-Encoding", "identity");
+                current.setRequestProperty("Origin", origin);
+                String cookies = CookieManager.getInstance().getCookie(origin + "/");
+                if (cookies != null && !cookies.isEmpty()) current.setRequestProperty("Cookie", cookies);
+                if (current.getResponseCode() != 200 || current.getContentLengthLong() > MobileArtworkCache.MAX_BYTES || stopped()) return;
+                String contentType = current.getContentType();
+                if (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("image/")) return;
+                try (InputStream input = current.getInputStream()) { MobileArtworkCache.store(activity.getFilesDir(), artworkUrl, input); }
+            } catch (Exception ignored) {
+            } finally {
+                connection = null;
+                if (current != null) current.disconnect();
             }
         }
 

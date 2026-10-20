@@ -1,21 +1,21 @@
 # Acervo para Android
 
-O APK instala o Acervo como aplicativo no Android 8.0 ou superior. Na tela inicial, escolha **Usar neste celular** para pesquisar, baixar e ouvir usando apenas a internet do proprio telefone. Nao exige computador ligado, mesma rede Wi-Fi, servidor ou assinatura de hospedagem.
+O APK instala o Acervo como aplicativo no Android 8.0 ou superior. Ele abre direto no **Início**, sem passar pelo leitor de QR, e lembra o último modo usado: o Acervo do PC ou a biblioteca do celular. Para pesquisar, baixar e ouvir usando apenas a internet do telefone, use o modo do celular. Nao exige computador ligado, mesma rede Wi-Fi, servidor ou assinatura de hospedagem.
 
 As musicas baixadas ficam na area privada do aplicativo e aparecem em **Biblioteca**, disponiveis mesmo sem internet. **Buscar** encontra musicas, artistas e links do YouTube; **Radio** busca sugestoes atuais a partir de uma musica escolhida ou da mais recente. A pesquisa e os novos downloads precisam de internet no celular. A reproducao continua em segundo plano, com play/pause e proxima na notificacao. No modo Radio, a proxima musica e baixada enquanto a atual toca. Desinstalar o aplicativo tambem apaga sua biblioteca local; atualizar usando a mesma assinatura preserva os dados.
 
-O modo **Conectar a outro Acervo** continua disponivel por QR code, separado da biblioteca local. Ele abre a biblioteca e os controles de outro servidor Acervo. Enderecos locais ou tuneis ate o computador dependem dele ligado; uma instalacao hospedada na nuvem pode funcionar com ele desligado. HTTPS exige certificado valido: o aplicativo nao ignora erros de certificado.
+O painel **Conexões** permite abrir o leitor de QR ou escolher **Usar neste celular**. Depois de autenticar o PC, o aplicativo lembra a conexão e abre sua página inicial nas próximas entradas. Enderecos locais ou tuneis ate o computador dependem dele ligado; uma instalacao hospedada na nuvem pode funcionar com ele desligado. HTTPS exige a verificação da identidade; o aplicativo nao ignora erros de certificado.
 
 A sincronizacao de bibliotecas e manual: depois de parear e conectar ao outro Acervo, use **Sincronizar bibliotecas**. O aplicativo compara os identificadores e mostra quantas musicas faltam em cada aparelho antes de continuar. O celular baixa sua propria copia pela internet; o computador recebe pedidos para baixar as que faltam nele. Nenhuma musica e apagada do outro aparelho. Essa etapa exige que o outro Acervo esteja acessivel; depois, cada biblioteca funciona por conta propria. Faixas sem identificador compativel sao ignoradas, e indisponibilidade na fonte pode impedir um download.
 
 ## Instalar
 
-A versão 1.5.0 mantém o estilo da versão Web nos modos independente e offline: Início, Buscar, Biblioteca e Rádio na navegação inferior, mini player e player expandido. Os perfis offline usam as faixas e o histórico locais; capas carregadas são guardadas em disco privado. A conexão ao PC agora exige as identidades dos dois aparelhos e permite um único celular autorizado.
+A versão 1.5.4 reaproveita conexões HTTPS e o contexto TLS do PC para reduzir a espera por capas e consultas, preservando a autenticação dos dois aparelhos. Ela abre direto no Início e padroniza os modos conectado, independente e offline: Início, Buscar, Biblioteca e Rádio na mesma navegação inferior, cartões e atalhos de músicas, listas, mini player e player expandido. Os perfis e as recomendações offline usam as faixas e o histórico locais; as capas disponíveis são guardadas em disco privado. A conexão ao PC exige as identidades dos dois aparelhos e permite um único celular autorizado.
 
-1. Copie `releases/acervo-1.5.0.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
-2. Abra o aplicativo e toque em **Usar neste celular**.
+1. Copie `releases/acervo-1.5.4.apk` para o celular e abra o arquivo. Instale por cima da versão anterior para preservar suas músicas. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
+2. Abra o aplicativo: a instalação nova entra direto no Início do celular; uma conexão anterior ao PC é reaberta automaticamente.
 3. Em **Buscar**, procure uma musica e toque em **Baixar** ou **Baixar e ouvir**. Ela fica salva na biblioteca do celular.
-4. Para controlar outro Acervo, volte a **Conexoes** e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor.
+4. Para controlar outro Acervo, abra **Conexões** pelo ícone de dispositivos e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor. Ao conectar, o app entra no Início e salva apenas a origem confirmada, sem guardar o convite temporário.
 
 Para a nuvem, use o link HTTPS real da sua instalacao; nenhum servidor publico e criado ou definido pelo APK. Um exemplo de formato e `https://seu-dominio.com/#pair=CODIGO_DO_QR`, com o codigo real gerado pelo Acervo. O aplicativo lembra o endereco e os cookies de conexao, sem gravar o codigo temporario do QR.
 
@@ -56,7 +56,7 @@ O script usa a chave original em `android/signing/acervo-release.jks` e sua senh
 
 Guarde um backup privado dos dois arquivos juntos. Eles permitem assinar futuras atualizacoes compativeis com a instalacao existente. A pasta `signing/` esta excluida pelo `.gitignore`: nao envie a chave ou a senha junto com o APK. Se a chave existir e a senha estiver ausente, a compilacao para em vez de substituir a assinatura.
 
-Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.5.0.apk` com o Android Build Tools no PATH.
+Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.5.4.apk` com o Android Build Tools no PATH.
 
 ## Atualizar pelo aplicativo
 
@@ -68,6 +68,6 @@ Depois de informar e configurar o repositório de atualizações, será possíve
 
 ## Licenças e fontes
 
-O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.5.0-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
+O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.5.4-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
 
 É possível compilar um APK próprio com Gradle e assiná-lo com uma chave própria sem ter acesso à chave original. Essa chave própria não permite atualizar por cima de uma instalação assinada pela chave original. Para empacotar os fontes da distribuição, use `python android/package-source.py --dependency-sources CAMINHO_DOS_FONTES_DAS_DEPENDENCIAS`.

@@ -190,3 +190,81 @@ test('revocation cancels active remote HTTP bodies, leaves finished responses an
   assert.equal(owner.destroyed, false);
   assert.throws(() => connect.trackResponse({ url: '/api/stream/song' }, response(), context), status(401));
 });
+
+test('fresh QR invitations contain 32 random bytes and only the newest one can bind a phone', async t => {
+  const f = await fixture(t); const connect = f.create(); const owner = f.local(connect);
+  const codes = [];
+  for (let index = 0; index < 32; index++) {
+    const pairing = await connect.createPairing(owner);
+    assert.match(pairing.code, /^[A-Za-z0-9_-]{43}$/);
+    assert.equal(Buffer.from(pairing.code, 'base64url').length, 32);
+    assert.equal(pairing.expiresAt > Date.now(), true);
+    assert.equal(pairing.expiresAt <= Date.now() + 5 * 60 * 1000, true);
+    assert.equal(new URLSearchParams(new URL(pairing.url).hash.slice(1)).get('pair'), pairing.code);
+    codes.push(pairing.code);
+  }
+  assert.equal(new Set(codes).size, codes.length);
+  const claimContext = connect.authorize(f.req({ identity: f.identities[0], method: 'POST' }), '/api/connect/claim');
+  for (const code of codes.slice(0, 3)) assert.throws(() => connect.claim(claimContext, { code }), status(401));
+  const result = connect.claim(claimContext, { code: codes.at(-1) });
+  assert.equal(result.snapshot.security.pcPin, PC_PIN, 'Generating invitations does not rotate the PC identity');
+  const persisted = await fs.readFile(f.deviceFile, 'utf8');
+  const publicState = JSON.stringify(connect.snapshot(owner));
+  for (const code of codes) {
+    assert.equal(persisted.includes(code), false);
+    assert.equal(publicState.includes(code), false);
+  }
+  assert.throws(() => connect.claim(claimContext, { code: codes.at(-1) }), status(401));
+});
+
+test('an older QR still rendering cannot replace the latest invitation', async t => {
+  const f = await fixture(t); const pending = [];
+  const connect = f.create({ qrCode: url => new Promise(resolve => pending.push({ url, resolve })) });
+  const owner = f.local(connect);
+  const olderPromise = connect.createPairing(owner);
+  const olderRejected = assert.rejects(olderPromise, status(409));
+  const newerPromise = connect.createPairing(owner);
+  assert.equal(pending.length, 2);
+  pending[1].resolve('fixture-new');
+  const newer = await newerPromise;
+  pending[0].resolve('fixture-old');
+  await olderRejected;
+  const olderCode = new URLSearchParams(new URL(pending[0].url).hash.slice(1)).get('pair');
+  const remote = connect.authorize(f.req({ identity: f.identities[0], method: 'POST' }), '/api/connect/claim');
+  assert.throws(() => connect.claim(remote, { code: olderCode }), status(401));
+  assert.equal(connect.claim(remote, { code: newer.code }).snapshot.security.phonePin, f.identities[0].spkiPin);
+});
+
+test('starting QR regeneration invalidates the displayed invitation even while the new image renders', async t => {
+  const f = await fixture(t); let resume;
+  let delayed = false;
+  const connect = f.create({ qrCode: async url => delayed ? new Promise(resolve => { resume = () => resolve('fixture-new'); }) : 'fixture:' + url });
+  const owner = f.local(connect); const first = await connect.createPairing(owner);
+  delayed = true;
+  const secondPromise = connect.createPairing(owner);
+  const remote = connect.authorize(f.req({ identity: f.identities[0], method: 'POST' }), '/api/connect/claim');
+  assert.throws(() => connect.claim(remote, { code: first.code }), status(401));
+  resume();
+  const second = await secondPromise;
+  assert.notEqual(second.code, first.code);
+  assert.equal(connect.claim(remote, { code: second.code }).snapshot.security.phonePin, f.identities[0].spkiPin);
+});
+
+test('QR expiry and phone revocation cannot revive an invitation that was already rendering', async t => {
+  const f = await fixture(t); let clock = Date.now(); let resume; let delayed = false;
+  const connect = f.create({ now: () => clock,
+    qrCode: async url => delayed ? new Promise(resolve => { resume = () => resolve('fixture'); }) : 'fixture:' + url });
+  const owner = f.local(connect);
+  const expired = await connect.createPairing(owner);
+  clock = expired.expiresAt;
+  const remote = connect.authorize(f.req({ identity: f.identities[0], method: 'POST' }), '/api/connect/claim');
+  assert.throws(() => connect.claim(remote, { code: expired.code }), status(401));
+  const current = await connect.createPairing(owner);
+  const paired = connect.claim(remote, { code: current.code });
+  delayed = true;
+  const rendering = connect.createPairing(owner);
+  const rejected = assert.rejects(rendering, status(409));
+  connect.revoke(owner, paired.snapshot.deviceId);
+  resume(); await rejected;
+  assert.throws(() => connect.authorize(f.req({ identity: f.identities[0] }), '/api/library'), status(401));
+});

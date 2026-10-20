@@ -5,20 +5,21 @@ import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../app/src/main/assets/native-transport.js', import.meta.url), 'utf8').replaceAll('__ACERVO_DOCUMENT_NONCE__', 'fixture-document-key');
 function fixture(options = {}) {
-  const calls = [], cancelled = [], external = [], listeners = {}, reloads = [];
+  const calls = [], cancelled = [], external = [], listeners = {}, reloads = [], confirmed = [];
   class BrowserRequest extends Request {
     constructor(input, init) { super(typeof input === 'string' ? new URL(input, 'https://192.168.1.8:4314/').href : input, init); }
   }
   const win = {
     fetch: (...args) => { external.push(args); return Promise.resolve(new Response('external')); },
     AcervoSecure: { request: (...args) => calls.push(args), cancel: (...args) => cancelled.push(args) },
+    AcervoAndroid: { connectedConfirmed: (...args) => confirmed.push(args) },
     addEventListener: (type, callback) => { listeners[type] = callback; }
   };
   win.top = options.frame ? {} : win;
   const context = vm.createContext({ window: win, location: { origin: 'https://192.168.1.8:4314', reload: () => reloads.push(true) }, Request: BrowserRequest, Response, ReadableStream, URL, Map, Uint8Array, JSON, Promise, DOMException, TypeError, atob, btoa });
   vm.runInContext(source, context);
   return {
-    win, calls, cancelled, external, listeners, reloads,
+    win, calls, cancelled, external, listeners, reloads, confirmed,
     event(id, type, values = {}) { win.__acervoSecureReceive({ key: 'fixture-document-key', id, type, ...values }); }
   };
 }
@@ -97,8 +98,8 @@ test('stream cancellation disconnects native transport and wrong-document events
 test('TLS/network failures fail the fetch and pagehide cancels outstanding work', async () => {
   const f = fixture();
   const { result, id } = await request(f, '/api/library');
-  f.event(id, 'error');
-  await assert.rejects(result, /conexão segura/);
+  f.event(id, 'error', { message: 'AC-TLS: Não foi possível autenticar os aparelhos.' });
+  await assert.rejects(result, /AC-TLS: Não foi possível autenticar/);
   const page = fixture(), waiting = await request(page, '/api/radio', { method: 'POST' });
   page.listeners.pagehide();
   await assert.rejects(waiting.result, error => error.name === 'AbortError');
@@ -126,4 +127,24 @@ test('a restored document reloads to receive its current native identity capabil
   const f = fixture();
   f.listeners.pageshow({ persisted: false }); assert.equal(f.reloads.length, 0);
   f.listeners.pageshow({ persisted: true }); assert.equal(f.reloads.length, 1);
+});
+
+test('connection confirmation carries this document capability and the trusted origin only from its top frame', () => {
+  const f = fixture();
+  assert.equal(f.confirmed.length, 0);
+  f.win.__acervoConnectionReady();
+  assert.deepEqual(f.confirmed, [['https://192.168.1.8:4314', 'fixture-document-key']]);
+  f.win.top = {};
+  f.win.__acervoConnectionReady();
+  assert.equal(f.confirmed.length, 1);
+  const frame = fixture({ frame: true });
+  assert.equal(frame.win.__acervoConnectionReady, undefined);
+  assert.equal(frame.confirmed.length, 0);
+});
+
+test('web clients without the confirmation interface keep working', () => {
+  const f = fixture();
+  delete f.win.AcervoAndroid.connectedConfirmed;
+  assert.doesNotThrow(() => f.win.__acervoConnectionReady());
+  assert.equal(f.confirmed.length, 0);
 });

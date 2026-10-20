@@ -44,6 +44,7 @@ public final class SecureWebClient {
     private final Set<HttpURLConnection> resources = ConcurrentHashMap.newKeySet();
     private volatile String documentKey;
     private volatile boolean disposed;
+    private volatile String lastFailure;
 
     public SecureWebClient(WebView webView, Context host, String trustedOrigin) {
         view = webView;
@@ -58,7 +59,9 @@ public final class SecureWebClient {
 
     public void attach() { view.addJavascriptInterface(new Bridge(), "AcervoSecure"); }
     /** Optional before an explicit loadUrl; interception also rotates for actual main-document requests. */
-    public void newDocument() { documentKey = randomKey(); cancelAll(); }
+    public void newDocument() { documentKey = randomKey(); lastFailure = null; cancelAll(); }
+    public String getFailureMessage() { return lastFailure; }
+    public boolean isActiveDocument(String key) { return active(key); }
     public void dispose() { disposed = true; documentKey = randomKey(); cancelAll(); workers.shutdownNow(); view.removeJavascriptInterface("AcervoSecure"); }
 
     public WebResourceResponse intercept(WebResourceRequest request) {
@@ -89,7 +92,6 @@ public final class SecureWebClient {
                 String key = documentKey;
                 String html;
                 try (InputStream source = input) { html = new String(readBounded(source, 2 * 1024 * 1024), StandardCharsets.UTF_8); }
-                connection.disconnect();
                 resources.remove(connection);
                 String script = "<script>" + bootstrap.replace("__ACERVO_DOCUMENT_NONCE__", key) + "</script>";
                 int head = html.toLowerCase(Locale.US).indexOf("<head");
@@ -101,10 +103,20 @@ public final class SecureWebClient {
                         new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
             }
             final HttpURLConnection opened = connection;
-            return new WebResourceResponse(mime, encoding, validStatus(status), statusText, headers, new FilterInputStream(input) {
-                @Override public void close() throws IOException { try { super.close(); } finally { resources.remove(opened); opened.disconnect(); } }
-            });
-        } catch (Exception failure) { if (connection != null) { resources.remove(connection); connection.disconnect(); } return failure(); }
+            InputStream body = new FilterInputStream(input) {
+                private long consumed;
+                private boolean complete;
+                private final long length = opened.getContentLengthLong();
+                @Override public int read() throws IOException { int value = in.read(); if (value < 0) complete = true; else consumed++; return value; }
+                @Override public int read(byte[] buffer, int offset, int count) throws IOException { int read = in.read(buffer, offset, count); if (read < 0) complete = true; else consumed += read; return read; }
+                @Override public void close() throws IOException {
+                    boolean reusable = (length >= 0 ? consumed == length : complete) || "HEAD".equals(request.getMethod());
+                    try { super.close(); } catch (IOException failure) { reusable = false; throw failure; }
+                    finally { resources.remove(opened); if (!reusable) opened.disconnect(); }
+                }
+            };
+            return new WebResourceResponse(mime, encoding, validStatus(status), statusText, headers, body);
+        } catch (Exception failure) { lastFailure = TransportFailure.message(failure); if (connection != null) { resources.remove(connection); connection.disconnect(); } return failure(); }
     }
 
     private boolean active(String key) { return !disposed && key != null && key.equals(documentKey); }
@@ -191,6 +203,7 @@ public final class SecureWebClient {
 
     private void run(Job job, String method, String target, Map<String, String> headers, byte[] body, boolean credentials) {
         HttpURLConnection connection = null;
+        boolean complete = false;
         try {
             if (!active(job.key) || job.cancelled.get()) return;
             connection = SecureTransport.open(context, target, origin);
@@ -208,18 +221,24 @@ public final class SecureWebClient {
             rememberCookies(connection);
             event(job, "headers", new JSONObject().put("status", status).put("statusText", reason(connection, status)).put("headers", new JSONObject(responseHeaders(connection))));
             long total = 0, started = System.nanoTime();
-            if (!"HEAD".equals(method)) try (InputStream input = responseStream(connection, status)) {
+            try (InputStream input = responseStream(connection, status)) {
                 byte[] buffer = new byte[32 * 1024]; int count;
-                while ((count = input.read(buffer)) != -1) {
+                while (!"HEAD".equals(method) && (count = input.read(buffer)) != -1) {
                     if (!active(job.key) || job.cancelled.get()) return;
                     total += count;
                     if (total > 32L * 1024 * 1024 || System.nanoTime() - started > 120000000000L) throw new IOException("Resposta excedeu o limite seguro.");
                     event(job, "chunk", new JSONObject().put("data", Base64.encodeToString(buffer, 0, count, Base64.NO_WRAP)));
                 }
             }
+            complete = true;
             event(job, "end", new JSONObject());
-        } catch (Exception failure) { event(job, "error", new JSONObject()); }
-        finally { if (connection != null) connection.disconnect(); jobs.remove(job.id, job); }
+        } catch (Exception failure) {
+            lastFailure = TransportFailure.message(failure);
+            JSONObject details = new JSONObject();
+            try { details.put("message", lastFailure); } catch (org.json.JSONException ignored) { }
+            event(job, "error", details);
+        }
+        finally { if (connection != null && !complete) connection.disconnect(); jobs.remove(job.id, job); }
     }
     private static final class Job {
         final String key; final int id; final AtomicBoolean cancelled = new AtomicBoolean(); volatile HttpURLConnection connection;

@@ -3,6 +3,11 @@
   var bridge = window.AcervoSecure;
   var key = '__ACERVO_DOCUMENT_NONCE__';
   if (!bridge || typeof window.fetch !== 'function' || window.top !== window) return;
+  window.__acervoConnectionReady = function () {
+    if (window.top === window && window.AcervoAndroid && window.AcervoAndroid.connectedConfirmed) {
+      window.AcervoAndroid.connectedConfirmed(location.origin, key);
+    }
+  };
   var original = window.fetch.bind(window), pending = new Map(), next = 1;
   function abortError() { return new DOMException('Operação cancelada.', 'AbortError'); }
   function bytes(base64) {

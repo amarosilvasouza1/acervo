@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 // Exercise shipped routing and view behavior without network, media downloads or user data.
 const sources = {};
-for (const name of ['app', 'views']) sources[name] = await readFile(new URL('../public/' + name + '.js', import.meta.url), 'utf8');
+for (const name of ['app', 'explore', 'views']) sources[name] = await readFile(new URL('../public/' + name + '.js', import.meta.url), 'utf8');
 const page = await readFile(new URL('../public/index.html', import.meta.url), 'utf8');
 const tracks = [
   { id: 'local-alpha', videoId: 'video-alpha', title: 'Alpha', artist: 'First artist', duration: 240, plays: 0, sourceUrl: 'https://youtube.com/watch?v=video-alpha' },
@@ -71,7 +71,7 @@ function browser({ backend, bridge } = {}) {
     setTimeout(callback) { const id = ++timerId; timers.set(id, callback); return id; }, clearTimeout: id => timers.delete(id),
     setInterval(callback) { const id = ++timerId; timers.set(id, callback); return id; }, clearInterval: id => timers.delete(id),
     requestAnimationFrame(callback) { callback(); return 1; }, cancelAnimationFrame() {} });
-  for (const name of ['app', 'views']) vm.runInContext(sources[name], context, { filename: 'public/' + name + '.js' });
+  for (const name of ['app', 'explore', 'views']) vm.runInContext(sources[name], context, { filename: 'public/' + name + '.js' });
   const AC = window.AC; AC.toast = (...args) => notifications.push(args); AC.state.tracks = plain(tracks); AC.state.stats.tracks = tracks.length;
   AC.leaveRadio = () => {}; AC.radioView = () => '<div>Sua rádio</div>'; AC.bindRadio = () => {};
   function dispatch(type, target, extra = {}) {
@@ -156,18 +156,43 @@ test('Enter and Space activate role-button track controls once while nested nati
   assert.equal(h.AC.state.panelId, null);
 });
 
-test('rendered library rows open details by keyboard while their play button starts audio once', async () => {
+test('library music names play by click and keyboard while the explicit details button opens the sheet', async () => {
   const h = browser(); h.AC.go('library');
-  const row = h.control('open-track');
+  const row = h.control('play-track');
   assert.equal(row.getAttribute('role'), 'button'); assert.equal(row.getAttribute('tabindex'), '0');
   assert.equal(h.key(row, 'Enter', 'Enter').defaultPrevented, true); await flush();
-  assert.equal(h.AC.state.panelId, 'local-alpha'); assert.match(h.getNode('modal-root').innerHTML, /Alpha/);
-  assert.equal(h.audioCalls.length, 0);
-  h.AC.closeModals();
-  const play = h.control('play-track'); play.parentElement = row;
-  h.click(play); await flush();
   assert.equal(h.AC.state.current.id, 'local-alpha'); assert.equal(h.audioCalls.filter(call => call === 'play').length, 1);
   assert.equal(h.AC.state.panelId, null);
+  const details = h.control('open-track'); details.parentElement = row;
+  h.click(details); await flush();
+  assert.equal(h.AC.state.panelId, 'local-alpha'); assert.match(h.getNode('modal-root').innerHTML, /Alpha/);
+  assert.equal(h.audioCalls.filter(call => call === 'play').length, 1);
+  h.AC.closeModals();
+  const title = h.action('unused', {}, 'SPAN'); title.removeAttribute('data-action'); title.parentElement = row;
+  h.click(title); await flush();
+  assert.equal(h.AC.state.view, 'library'); assert.equal(h.AC.state.panelId, null);
+  assert.equal(h.calls.some(call => call.url.startsWith('/api/artist?')), false);
+});
+
+test('home card name, cover and play icon start music; only the artist link opens its profile', async () => {
+  for (const target of ['name', 'cover', 'play-icon']) {
+    const h = browser(); h.AC.go('home');
+    const cardTag = h.getNode('view').innerHTML.match(/<article\b[^>]*class="card"[^>]*>/)[0];
+    const card = h.action('play-track', { 'data-id': 'local-alpha', role: 'button' }, 'ARTICLE');
+    assert.match(cardTag, /data-action="play-track"/);
+    const play = h.action('play-track', { 'data-id': 'local-alpha' }); play.parentElement = card;
+    const child = h.action('unused', {}, target === 'play-icon' ? 'PATH' : 'SPAN');
+    child.removeAttribute('data-action'); child.parentElement = target === 'play-icon' ? play : card;
+    h.click(child); await flush();
+    assert.equal(h.AC.state.current.id, 'local-alpha'); assert.equal(h.AC.state.view, 'home');
+    assert.equal(h.AC.state.panelId, null); assert.equal(h.audioCalls.filter(call => call === 'play').length, 1);
+    assert.equal(h.calls.some(call => call.url.startsWith('/api/artist?')), false);
+    const artist = h.action('open-artist', { 'data-artist': 'First artist' }); artist.parentElement = card;
+    h.click(artist); await flush();
+    assert.equal(h.AC.state.view, 'artist'); assert.equal(h.AC.state.artistName, 'First artist');
+    assert.equal(h.audioCalls.filter(call => call === 'play').length, 1);
+    assert.ok(h.calls.some(call => call.url === '/api/artist?name=First%20artist'));
+  }
 });
 
 test('settings preserve native checkbox activation and save the changed value once', async () => {

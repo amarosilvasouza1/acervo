@@ -16,6 +16,30 @@ public final class PhoneIdentityPolicyTest {
         check(alias.equals(PhoneIdentity.aliasFor("a".repeat(64))), "The same PC pin reuses one identity across LAN and public addresses");
         check(!alias.equals(PhoneIdentity.aliasFor("b".repeat(64))), "Another PC public key receives another phone identity");
         check(alias.matches("acervo_device_v1_[a-f0-9]{64}"), "Aliases contain a digest instead of the server address");
+        String pin = "a".repeat(64), tlsAlias = PhoneIdentity.tlsAliasFor(pin);
+        check(tlsAlias.matches("acervo_device_v2_[a-f0-9]{64}") && !tlsAlias.equals(alias), "TLS migration uses another alias without overwriting the old key");
+        check(PhoneIdentity.supportsTlsDigest(PhoneIdentity.tlsDigests()), "Generated keys authorize raw digest signing required by Android Conscrypt");
+        check(java.util.Arrays.equals(PhoneIdentity.tlsDigests(), new String[] { "NONE", "SHA-256" }), "The certificate and the prehashed TLS transcript can both be signed");
+        check(!PhoneIdentity.supportsTlsDigest(new String[] { "SHA-256" }), "APK 1.5.0 SHA256-only policy is rejected for TLS client authentication");
+        check(!PhoneIdentity.supportsTlsDigest(null) && !PhoneIdentity.supportsTlsDigest(new String[0]), "Unknown digest authorization is never treated as compatible");
+        check(alias.equals(PhoneIdentity.aliasForQr(pin, null, true, true, false, false, true)), "An existing compatible v1 key is preserved");
+        check(tlsAlias.equals(PhoneIdentity.aliasForQr(pin, null, true, false, false, false, true)), "An explicit QR can migrate an existing incompatible v1 key to v2");
+        check(tlsAlias.equals(PhoneIdentity.aliasForQr(pin, null, false, false, false, false, false)), "A new installation starts with the TLS-capable v2 alias");
+        check(tlsAlias.equals(PhoneIdentity.aliasForQr(pin, tlsAlias, true, false, true, true, true)), "An already selected v2 identity survives future QR scans");
+        check(tlsAlias.equals(PhoneIdentity.aliasForQr(pin, null, true, false, true, true, true)), "A previously created v2 key is reused after an interrupted preferences write");
+        check(tlsAlias.equals(PhoneIdentity.tlsAliasFor(pin)), "The same PC uses the same migrated identity over LAN and internet");
+        boolean migrationRejected = false;
+        try { PhoneIdentity.aliasForQr(pin, tlsAlias, true, true, false, false, true); } catch (java.security.GeneralSecurityException expected) { migrationRejected = true; }
+        check(migrationRejected, "A missing selected v2 key cannot silently revert to a legacy identity");
+        migrationRejected = false;
+        try { PhoneIdentity.aliasForQr(pin, null, false, false, false, false, true); } catch (java.security.GeneralSecurityException expected) { migrationRejected = true; }
+        check(migrationRejected, "A lost paired key cannot silently regenerate even during QR acceptance");
+        migrationRejected = false;
+        try { PhoneIdentity.aliasForQr(pin, "unrelated_android_alias", true, true, true, true, true); } catch (java.security.GeneralSecurityException expected) { migrationRejected = true; }
+        check(migrationRejected, "Preferences cannot select an unrelated Android key");
+        migrationRejected = false;
+        try { PhoneIdentity.aliasForQr(pin, tlsAlias, true, false, true, false, true); } catch (java.security.GeneralSecurityException expected) { migrationRejected = true; }
+        check(migrationRejected, "An unusable v2 key is not overwritten or accepted");
         boolean rejected = false;
         try { PhoneIdentity.canonicalOrigin("http://192.168.1.2:4313"); } catch (java.security.GeneralSecurityException expected) { rejected = true; }
         check(rejected, "Cleartext cannot own a device identity");

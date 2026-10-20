@@ -5,8 +5,13 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.5.0';
+  var NEWS_VERSION = '1.5.4';
   var NEWS = [
+    ['Conexões reaproveitadas', 'O APK reutiliza conexões seguras ao carregar capas e dados do PC. O encaminhamento também atende mais pedidos simultâneos para reduzir a espera ao abrir a página.'],
+    ['Início direto no Android', 'O aplicativo lembra o último modo usado. Depois de conectar ao PC, abre direto no Início; o QR fica em Conexões.'],
+    ['Offline com o mesmo estilo', 'As abas, os cartões de músicas, as listas e o player seguem os mesmos padrões do modo conectado. As capas disponíveis também ficam salvas no celular.'],
+    ['QR novo a cada convite', 'Cada convite usa aleatoriedade criptográfica, vale cinco minutos e só pode ser usado uma vez. Gerar outro invalida o anterior imediatamente.'],
+    ['Conectar pela internet', 'Em Dispositivos no PC, ative o encaminhamento criptografado e confira a verificação do endereço público. O celular usa o APK sem instalar Tailscale.'],
     ['Músicas completas e identificadas', 'Corrigido o corte de áudio perto de 44 segundos no APK conectado ao PC. Título e artista da busca são preservados no download e na sincronização.'],
     ['Somente seu celular', 'O PC e o celular verificam a identidade um do outro. Apenas um telefone fica autorizado; remover esse aparelho no PC encerra o acesso.'],
     ['Chaves ficam nos aparelhos', 'O QR leva um convite de uso único e a identidade pública do PC. A chave privada do telefone fica protegida pelo Android. Compare os dois códigos em Proteção.'],
@@ -90,19 +95,20 @@
   }
 
   function cardHtml(t) {
-    return '<article class="card" role="button" tabindex="0" data-action="open-track" data-id="' + esc(t.id) + '">' +
+    return '<article class="card" role="button" tabindex="0" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Tocar ' + esc(t.title) + '">' +
       '<div class="card-cover">' + AC.coverHtml(t) +
         '<button class="card-play" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Tocar ' + esc(t.title) + '">' + icon('play', 16) + '</button>' +
       '</div>' +
       '<div>' +
-        '<div class="card-title" title="' + esc(t.title) + '">' + esc(t.title) + '</div>' +
+        '<div class="card-heading"><div class="card-title" title="' + esc(t.title) + '">' + esc(t.title) + '</div>' +
+          '<button class="icon-btn card-details" data-action="open-track" data-id="' + esc(t.id) + '" aria-label="Detalhes de ' + esc(t.title) + '" title="Detalhes da música">' + icon('more', 16) + '</button></div>' +
         artistLink(t.artist, 'card-artist') +
       '</div>' +
     '</article>';
   }
 
   function rowHtml(t, index) {
-    return '<div class="row" role="button" tabindex="0" data-action="open-track" data-id="' + esc(t.id) + '">' +
+    return '<div class="row" role="button" tabindex="0" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Tocar ' + esc(t.title) + '">' +
       '<span class="idx">' + (index + 1) + '</span>' +
       '<span class="row-main">' +
         '<span class="row-cover">' + AC.coverHtml(t) + '</span>' +
@@ -111,7 +117,7 @@
       '<span class="row-meta row-bpm">' + (bpmOf(t) ? bpmOf(t) + ' BPM' : '—') + '</span>' +
       '<span class="row-meta row-lufs">' + lufsText(t) + '</span>' +
       '<span class="row-end"><span class="row-meta">' + AC.fmtTime(t.duration) + '</span>' +
-        '<button class="icon-btn row-actions" data-action="play-track" data-id="' + esc(t.id) + '" aria-label="Tocar ' + esc(t.title) + '">' + icon('play', 15) + '</button>' +
+        '<button class="icon-btn row-actions" data-action="open-track" data-id="' + esc(t.id) + '" aria-label="Detalhes de ' + esc(t.title) + '" title="Detalhes da música">' + icon('more', 16) + '</button>' +
       '</span>' +
     '</div>';
   }

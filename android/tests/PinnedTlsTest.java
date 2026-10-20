@@ -79,6 +79,7 @@ public final class PinnedTlsTest {
         SSLContext tls = SSLContext.getInstance("TLS");
         tls.init(managers(serverKeys), new TrustManager[] { onlyPhone }, null);
         HttpsServer server = HttpsServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        java.util.List<Integer> acceptedPorts = new java.util.concurrent.CopyOnWriteArrayList<>();
         server.setHttpsConfigurator(new HttpsConfigurator(tls) {
             @Override public void configure(HttpsParameters parameters) {
                 SSLParameters secure = getSSLContext().getDefaultSSLParameters();
@@ -87,6 +88,7 @@ public final class PinnedTlsTest {
             }
         });
         server.createContext("/", exchange -> {
+            acceptedPorts.add(exchange.getRemoteAddress().getPort());
             byte[] body = "only-paired-phone".getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(200, body.length);
             try (java.io.OutputStream output = exchange.getResponseBody()) { output.write(body); }
@@ -95,11 +97,26 @@ public final class PinnedTlsTest {
         try {
             URL url = new URL("https://127.0.0.1:" + server.getAddress().getPort() + "/api/library");
             HttpsURLConnection authorized = (HttpsURLConnection) url.openConnection();
-            PinnedTls.configure(authorized, url.getHost(), serverPin, managers(pairedPhone));
+            PinnedTls.Session session = PinnedTls.createSession(url.getHost(), serverPin, managers(pairedPhone));
+            session.configure(authorized);
             authorized.setConnectTimeout(3000); authorized.setReadTimeout(3000);
             try (InputStream input = authorized.getInputStream()) {
                 check("only-paired-phone".equals(new String(input.readAllBytes(), StandardCharsets.UTF_8)), "Paired phone proves possession of its private key");
-            } finally { authorized.disconnect(); }
+            }
+            HttpsURLConnection repeated = (HttpsURLConnection) url.openConnection();
+            session.configure(repeated);
+            repeated.setConnectTimeout(3000); repeated.setReadTimeout(3000);
+            check(authorized.getSSLSocketFactory() == repeated.getSSLSocketFactory(), "The paired identity keeps one TLS factory across requests");
+            try (InputStream input = repeated.getInputStream()) {
+                check("only-paired-phone".equals(new String(input.readAllBytes(), StandardCharsets.UTF_8)), "The reused connection still authenticates the paired phone");
+            }
+            check(acceptedPorts.size() == 2 && acceptedPorts.get(0).equals(acceptedPorts.get(1)), "A completed response reuses the existing mutually authenticated TCP connection");
+            session.invalidate();
+            boolean invalidated = false;
+            try { session.configure((HttpsURLConnection) url.openConnection()); }
+            catch (java.security.GeneralSecurityException expected) { invalidated = true; }
+            check(invalidated, "Removing a cached identity prevents new requests from using its TLS session");
+            repeated.disconnect(); authorized.disconnect();
             rejectsClient(url, serverPin, null, "A copied cookie without the phone key cannot complete mutual TLS");
             rejectsClient(url, serverPin, managers(stranger), "Another phone key cannot complete mutual TLS");
             javax.net.ssl.X509ExtendedKeyManager publicOnly = new javax.net.ssl.X509ExtendedKeyManager() {

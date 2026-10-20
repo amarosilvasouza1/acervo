@@ -156,16 +156,31 @@ function sharedBackend(initial = {}) {
 }
 
 const mutualSecurity = { type: 'mtls-pinned', mutual: true, exclusive: true, pcPin: 'a'.repeat(64), phonePin: 'b'.repeat(64), pairedDeviceId: 'phone', publicEndpoint: 'https://public.example:4311' };
-function mutualBackend({ paired = true, pairing = null, unauthorized = false } = {}) {
+function mutualBackend({ paired = true, pairing = null, unauthorized = false, endpoint = mutualSecurity.publicEndpoint, source, endpointResponse = null, relaySupported = false, relay = { state: 'offline' }, internetResponse = null } = {}) {
   const base = sharedBackend();
+  const secureSnapshot = () => ({ ...snapshot('pc'), devices: paired ? [device('pc'), device('phone', false)] : [device('pc')],
+    security: { ...mutualSecurity, phonePin: paired ? mutualSecurity.phonePin : null, pairedDeviceId: paired ? 'phone' : null, publicEndpoint: endpoint,
+      ...(relaySupported ? { internetRelaySupported: true, internetRelay: relay } : {}),
+      ...(source === undefined ? {} : { publicEndpointSource: source }) } });
   return { ...base, async fetch(call) {
     if (call.url === '/api/connect/config') return response({ cloud: false, security: { type: 'mtls-pinned', mutual: true, exclusive: true } });
     if (call.url === '/api/connect/info' || call.url === '/api/connect/register') {
       if (unauthorized) return response({ error: 'Leia no APK' }, 401);
-      return response({ ...snapshot('pc'), devices: paired ? [device('pc'), device('phone', false)] : [device('pc')],
-        security: { ...mutualSecurity, phonePin: paired ? mutualSecurity.phonePin : null, pairedDeviceId: paired ? 'phone' : null } });
+      return response(secureSnapshot());
     }
     if (call.url === '/api/connect/pairing' && pairing) return pairing.promise;
+    if (call.url === '/api/connect/endpoint') {
+      if (endpointResponse) return typeof endpointResponse === 'function' ? endpointResponse(call) : endpointResponse.promise;
+      endpoint = call.body.publicEndpoint; source = endpoint ? 'saved' : null;
+      return response(secureSnapshot());
+    }
+    if (call.url.startsWith('/api/connect/internet/')) {
+      if (internetResponse) return typeof internetResponse === 'function' ? internetResponse(call) : internetResponse.promise;
+      const enabled = call.url.endsWith('/enable');
+      endpoint = enabled ? 'https://my-relay.example:443' : null; source = enabled ? 'saved' : null;
+      relay = { provider: 'tailscale-funnel', state: enabled ? 'online' : 'offline', publicEndpoint: endpoint, verified: enabled };
+      return response({ snapshot: secureSnapshot(), relay });
+    }
     return base.fetch(call);
   } };
 }
@@ -175,7 +190,7 @@ test('mutual verification shows both identities and paired phones suppress new i
   await h.AC.initConnect(); h.AC.openDevices(); await flush();
   assert.match(h.getNode('connect-verification').innerHTML, /AAAAAAAA AAAAAAAA/);
   assert.match(h.getNode('connect-verification').innerHTML, /BBBBBBBB BBBBBBBB/);
-  assert.match(h.getNode('connect-verification').innerHTML, /https:\/\/public.example:4311/);
+  assert.match(h.getNode('connect-internet').innerHTML, /https:\/\/public.example:4311/);
   assert.match(h.getNode('connect-pairing').innerHTML, /remova o celular autorizado/);
   await h.AC.playerActions['connect-create']();
   assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 0);
@@ -199,6 +214,149 @@ test('mutual connection guidance requires the APK identity and hides browser man
   assert.equal(await h.AC.initConnect(), false);
   assert.match(h.getNode('modal-root').innerHTML, /APK atualizado/);
   assert.doesNotMatch(h.getNode('modal-root').innerHTML, /connect-claim-form/);
+});
+
+test('internet configuration is honest when no public endpoint exists and preserves a typed draft', async () => {
+  const h = browser({ backend: mutualBackend({ paired: false, endpoint: null, source: null }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.match(h.getNode('connect-internet').innerHTML, /Sem endereço de internet configurado/);
+  assert.match(h.getNode('connect-internet').innerHTML, /não abre portas/);
+  assert.match(h.getNode('connect-internet').innerHTML, /id="connect-endpoint-form"/);
+  h.getNode('connect-endpoint').value = 'https://my-pc.example:4311'; h.getNode('connect-endpoint').emit('input');
+  h.emit('state', playback({ revision: 2, position: 75 }));
+  assert.equal(h.getNode('connect-endpoint').value, 'https://my-pc.example:4311');
+  const oldHtml = h.getNode('connect-internet').innerHTML;
+  h.emit('devices', { ...snapshot('pc'), security: { ...mutualSecurity, publicEndpoint: null, publicEndpointSource: null, phonePin: null, pairedDeviceId: null } });
+  assert.equal(h.getNode('connect-internet').innerHTML, oldHtml);
+});
+
+test('saving and removing the public endpoint use the owner API and invalidate old QR codes', async () => {
+  const h = browser({ backend: mutualBackend({ paired: false, endpoint: null, source: null }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.ok(h.AC.connect.pairing);
+  h.getNode('connect-endpoint').value = 'https://my-pc.example:4311';
+  h.getNode('connect-endpoint-form').emit('submit', { preventDefault() {} }); await flush();
+  const save = h.calls.find(call => call.url === '/api/connect/endpoint');
+  assert.deepEqual(save.body, { publicEndpoint: 'https://my-pc.example:4311' });
+  assert.equal(save.options.method, 'POST');
+  assert.equal(h.AC.connect.security.publicEndpoint, 'https://my-pc.example:4311');
+  assert.equal(h.AC.connect.pairing, null);
+  assert.match(h.getNode('connect-endpoint-status').textContent, /acesso externo ainda precisa ser verificado/);
+  await h.AC.playerActions['connect-remove-endpoint']();
+  assert.equal(h.AC.connect.security.publicEndpoint, null);
+  assert.deepEqual(h.calls.filter(call => call.url === '/api/connect/endpoint').at(-1).body, { publicEndpoint: null });
+});
+
+test('environment endpoints stay read-only and invalid or failed saves do not claim success', async () => {
+  for (const source of ['environment', undefined]) {
+    const h = browser({ backend: mutualBackend({ source }) });
+    await h.AC.initConnect(); h.AC.openDevices(); await flush();
+    assert.doesNotMatch(h.getNode('connect-internet').innerHTML, /id="connect-endpoint-form"/);
+    assert.match(h.getNode('connect-internet').innerHTML, /ACERVO_PUBLIC_ENDPOINT/);
+    await h.AC.playerActions['connect-remove-endpoint']();
+    assert.equal(h.calls.some(call => call.url === '/api/connect/endpoint'), false);
+  }
+  const h = browser({ backend: mutualBackend({ paired: false, endpoint: null, source: null,
+    endpointResponse: () => response({ error: 'Não foi possível salvar o endereço.' }, 503) }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  h.getNode('connect-endpoint').value = 'http://my-pc.example:4311';
+  h.getNode('connect-endpoint-form').emit('submit', { preventDefault() {} }); await flush();
+  assert.equal(h.calls.some(call => call.url === '/api/connect/endpoint'), false);
+  assert.match(h.getNode('connect-endpoint-status').textContent, /HTTPS válido/);
+  h.getNode('connect-endpoint').value = 'https://my-pc.example:4311';
+  h.getNode('connect-endpoint-form').emit('submit', { preventDefault() {} }); await flush();
+  assert.equal(h.AC.connect.security.publicEndpoint, null);
+  assert.equal(h.getNode('connect-endpoint-status').textContent, 'Não foi possível salvar o endereço.');
+});
+
+test('paired phones receive an address-update QR only after the owner explicitly requests it', async () => {
+  const pairing = deferred();
+  const h = browser({ backend: mutualBackend({ pairing, source: 'saved' }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.equal(h.calls.some(call => call.url === '/api/connect/pairing'), false);
+  const pending = h.AC.playerActions['connect-refresh-address']();
+  pairing.resolve(response({ code: 'reconnect-invite', expiresAt: Date.parse('2026-10-18T18:05:00Z'), security: { type: 'mtls-pinned', pin: mutualSecurity.pcPin }, candidates: [
+    { address: 'public.example:4311', url: 'https://public.example:4311/#pair=reconnect-invite', qrDataUrl: 'data:image/png;base64,cXI=' },
+    { address: '192.168.0.10', url: 'https://192.168.0.10:4311/#pair=reconnect-invite', qrDataUrl: 'data:image/png;base64,cXI=' }
+  ] }));
+  await pending; await flush();
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 1);
+  assert.match(h.getNode('connect-pairing').innerHTML, /atualiza o endereço somente no celular já vinculado/);
+  assert.match(h.getNode('connect-pairing').innerHTML, /Internet · acesso externo não verificado/);
+  assert.match(h.getNode('connect-pairing').innerHTML, /Rede local · 192.168.0.10/);
+  h.emit('devices', { ...snapshot('pc'), security: { ...mutualSecurity, publicEndpointSource: 'saved' } });
+  assert.ok(h.AC.connect.pairing, 'unchanged identity does not erase the requested QR');
+  h.advance(300001);
+  assert.equal(h.AC.connect.pairing, null);
+  assert.match(h.getNode('connect-pairing').innerHTML, /convite anterior expirou/);
+  assert.doesNotMatch(h.getNode('connect-pairing').innerHTML, /class="connect-qr"/);
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 1, 'expiry does not silently create another invite');
+});
+
+test('an address-update QR is discarded when the linked phone key changes or is revoked', async () => {
+  for (const change of [{ phonePin: 'c'.repeat(64) }, { phonePin: null, pairedDeviceId: null }]) {
+    const pairing = deferred();
+    const h = browser({ backend: mutualBackend({ pairing, source: 'saved' }) });
+    await h.AC.initConnect(); h.AC.openDevices(); await flush();
+    const pending = h.AC.playerActions['connect-refresh-address']();
+    pairing.resolve(response({ code: 'reconnect-invite', expiresAt: Date.parse('2026-10-18T18:05:00Z'), security: { type: 'mtls-pinned', pin: mutualSecurity.pcPin },
+      candidates: [{ address: 'public.example:4311', url: 'https://public.example:4311/#pair=reconnect-invite', qrDataUrl: 'data:image/png;base64,cXI=' }] }));
+    await pending; await flush();
+    assert.ok(h.AC.connect.pairing);
+    h.emit('devices', { ...snapshot('pc'), security: { ...mutualSecurity, publicEndpointSource: 'saved', ...change } });
+    assert.equal(h.AC.connect.pairing, null);
+    assert.equal(h.calls.some(call => call.url.startsWith('/api/connect/devices/') && call.options.method === 'DELETE'), false, 'UI does not automatically revoke or replace a phone');
+  }
+});
+
+test('managed internet activates only on owner request and verified results replace the old QR', async () => {
+  const h = browser({ backend: mutualBackend({ paired: false, endpoint: null, source: null, relaySupported: true }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.match(h.getNode('connect-internet').innerHTML, /Ativar conexão pela internet/);
+  assert.equal(h.calls.some(call => call.url.startsWith('/api/connect/internet/')), false);
+  await h.AC.playerActions['connect-internet-enable']();
+  const enable = h.calls.find(call => call.url === '/api/connect/internet/enable');
+  assert.deepEqual(enable.body, {}); assert.equal(enable.options.method, 'POST');
+  assert.equal(h.AC.connect.security.internetRelay.state, 'online');
+  assert.equal(h.AC.connect.security.internetRelay.verified, true);
+  assert.equal(h.AC.connect.pairing, null);
+  assert.match(h.getNode('connect-internet').innerHTML, /Conexão pela internet verificada/);
+  assert.match(h.getNode('connect-internet').innerHTML, /sem instalar Tailscale/);
+  assert.doesNotMatch(h.getNode('connect-internet').innerHTML, /id="connect-endpoint-form"/);
+  await h.AC.playerActions['connect-internet-disable']();
+  assert.equal(h.AC.connect.security.internetRelay.state, 'offline');
+  assert.equal(h.AC.connect.security.publicEndpoint, null);
+  assert.match(h.getNode('connect-internet').innerHTML, /acesso pela rede local continua disponível/);
+});
+
+test('configured relay is not labeled verified and concurrent activation requests are deduplicated', async () => {
+  const pending = deferred();
+  const h = browser({ backend: mutualBackend({ relaySupported: true, source: 'saved', relay: { state: 'configured', provider: 'tailscale-funnel' }, internetResponse: pending }) });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.match(h.getNode('connect-internet').innerHTML, /Encaminhamento configurado · verificar conexão/);
+  assert.doesNotMatch(h.getNode('connect-internet').innerHTML, /Conexão pela internet verificada/);
+  const first = h.AC.playerActions['connect-internet-enable']();
+  h.AC.playerActions['connect-internet-enable']();
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/internet/enable').length, 1);
+  assert.match(h.getNode('connect-internet').innerHTML, /Preparando conexão/);
+  pending.resolve(response({ snapshot: { ...snapshot('pc'), security: { ...mutualSecurity, publicEndpointSource: 'saved', internetRelaySupported: true,
+    internetRelay: { state: 'online', verified: true, provider: 'tailscale-funnel' } } }, relay: { state: 'online', verified: true, provider: 'tailscale-funnel' } }));
+  await first;
+  assert.match(h.getNode('connect-internet').innerHTML, /Conexão pela internet verificada/);
+});
+
+test('provider authorization errors keep internet offline and only render safe HTTPS action links', async () => {
+  for (const actionUrl of ['https://login.tailscale.com/f/funnel', 'javascript:alert(1)']) {
+    const h = browser({ backend: mutualBackend({ relaySupported: true, endpoint: null, source: null,
+      internetResponse: () => response({ error: 'Autorize o encaminhamento primeiro.', actionUrl }, 409) }) });
+    await h.AC.initConnect(); h.AC.openDevices(); await flush();
+    await h.AC.playerActions['connect-internet-enable']();
+    assert.equal(h.AC.connect.security.internetRelay.state, 'offline');
+    assert.match(h.getNode('connect-internet').innerHTML, /Autorize o encaminhamento primeiro/);
+    assert.doesNotMatch(h.getNode('connect-internet').innerHTML, /Conexão pela internet verificada/);
+    if (actionUrl.startsWith('https:')) assert.match(h.getNode('connect-internet').innerHTML, /href="https:\/\/login.tailscale.com\/f\/funnel"/);
+    else assert.doesNotMatch(h.getNode('connect-internet').innerHTML, /javascript:|Autorizar encaminhamento no provedor/);
+  }
 });
 
 // Test cases below exercise the public Connect hooks once their implementation is present.
@@ -331,6 +489,118 @@ test('remote boot claims the QR before loading the library, strips the fragment,
   assert.equal(h.calls.find(call => call.url === '/api/connect/claim').body.code, 'private-code');
   assert.equal(h.storageWrites.some(write => /private-code|token|secret/i.test(write.value)), false);
   assert.equal(h.streams[0].url, '/api/connect/events');
+});
+
+test('a transient config failure retains the QR invitation only in memory for retry', async () => {
+  const backend = sharedBackend(); const baseFetch = backend.fetch;
+  let unavailable = true;
+  backend.fetch = call => call.url === '/api/connect/config' && unavailable
+    ? Promise.reject(new TypeError('Temporary relay failure')) : baseFetch(call);
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=memory-only-invitation', backend });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.equal(h.location.hash, '');
+  assert.deepEqual(h.calls.map(call => call.url), ['/api/connect/config']);
+  unavailable = false;
+  await h.AC.playerActions['connect-retry'](); await flush();
+  assert.equal(h.AC.connect.ready, true);
+  assert.equal(h.calls.find(call => call.url === '/api/connect/claim').body.code, 'memory-only-invitation');
+  assert.equal(h.storageWrites.some(write => /memory-only-invitation/.test(write.value)), false);
+});
+
+test('Android remembers the PC only after authenticated pairing or identity reconnect succeeds', async () => {
+  const backend = sharedBackend();
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=native-pairing-invitation', backend });
+  const notifications = [];
+  h.context.window.__acervoConnectionReady = () => notifications.push({ ready: h.AC.connect.ready, requests: h.calls.map(call => call.url), hash: h.location.hash });
+  assert.equal(await h.AC.initConnect(), true);
+  assert.equal(notifications.length, 1);
+  assert.equal(notifications[0].ready, true);
+  assert.ok(notifications[0].requests.includes('/api/connect/claim'));
+  assert.equal(notifications[0].hash, '');
+  await h.AC.initConnect();
+  assert.equal(notifications.length, 1, 'Reusing an initialized document does not reopen the home page');
+  const reconnect = browser({ deviceId: 'phone', mobile: true, backend });
+  let remembered = false;
+  reconnect.context.window.__acervoConnectionReady = () => { remembered = reconnect.AC.connect.ready; };
+  assert.equal(await reconnect.AC.initConnect(), true); assert.equal(remembered, true);
+  assert.equal(reconnect.calls.some(call => call.url === '/api/connect/claim'), false);
+});
+
+test('failed or incomplete pairing cannot mark the native connection as successful', async () => {
+  for (const backend of [sharedBackend(), { fetch: () => Promise.reject(new TypeError('Offline')) }, { fetch: call => response(call.url === '/api/connect/config' ? { cloud: false } : {}) }]) {
+    const h = browser({ deviceId: 'phone', mobile: true, backend });
+    let confirmations = 0;
+    h.context.window.__acervoConnectionReady = () => { confirmations++; };
+    await h.AC.initConnect();
+    assert.equal(h.AC.connect.ready, false); assert.equal(confirmations, 0);
+  }
+});
+
+test('claim retry checks the current identity first and reuses an invitation not yet accepted', async () => {
+  const backend = sharedBackend(); const baseFetch = backend.fetch;
+  let disconnected = true;
+  backend.fetch = call => {
+    if (call.url === '/api/connect/claim' && disconnected) { disconnected = false; throw new TypeError('Temporary claim connection failure'); }
+    return baseFetch(call);
+  };
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=memory-only-invitation', backend });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.match(h.getNode('modal-root').innerHTML, /connect-retry/);
+  const retryAt = h.calls.length;
+  await h.AC.playerActions['connect-retry'](); await flush();
+  assert.deepEqual(h.calls.slice(retryAt, retryAt + 3).map(call => call.url), ['/api/connect/config', '/api/connect/info', '/api/connect/claim']);
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/claim').length, 2);
+  assert.equal(h.AC.connect.ready, true);
+  assert.equal(h.storageWrites.some(write => /memory-only-invitation/.test(write.value)), false);
+});
+
+test('a lost claim response recovers the authenticated identity without reusing its consumed invite', async () => {
+  const backend = sharedBackend(); const baseFetch = backend.fetch;
+  let firstClaim = true;
+  backend.fetch = async call => {
+    const result = await baseFetch(call);
+    if (call.url === '/api/connect/claim' && firstClaim) { firstClaim = false; throw new TypeError('Response lost after acceptance'); }
+    return result;
+  };
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=consumed-invitation', backend });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.equal(backend.paired.has('phone'), true);
+  const retryAt = h.calls.length;
+  await h.AC.playerActions['connect-retry'](); await flush();
+  assert.deepEqual(h.calls.slice(retryAt, retryAt + 2).map(call => call.url), ['/api/connect/config', '/api/connect/info']);
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/claim').length, 1);
+  assert.equal(h.AC.connect.ready, true);
+  assert.equal(h.storageWrites.some(write => /consumed-invitation/.test(write.value)), false);
+});
+
+test('retry never sends the invitation while identity recovery is unavailable or after its memory deadline', async () => {
+  for (const expired of [false, true]) {
+    const backend = sharedBackend(); const baseFetch = backend.fetch;
+    let firstClaim = true;
+    backend.fetch = call => {
+      if (call.url === '/api/connect/claim' && firstClaim) { firstClaim = false; throw new TypeError('Claim request lost'); }
+      if (call.url === '/api/connect/info' && !expired) return response({ error: 'Recovery temporarily unavailable' }, 503);
+      return baseFetch(call);
+    };
+    const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=bounded-memory-invitation', backend });
+    assert.equal(await h.AC.initConnect(), false);
+    if (expired) h.advance(5 * 60 * 1000 + 1);
+    await h.AC.playerActions['connect-retry'](); await flush();
+    assert.equal(h.calls.filter(call => call.url === '/api/connect/claim').length, 1);
+    assert.equal(h.AC.connect.ready, false);
+    assert.equal(h.calls.some(call => call.url === '/api/library'), false);
+  }
+});
+
+test('a definitively expired server invitation is discarded instead of being retried', async () => {
+  const backend = sharedBackend(); const baseFetch = backend.fetch;
+  backend.fetch = call => call.url === '/api/connect/claim' ? response({ error: 'Este QR code expirou ou já foi usado.' }, 401) : baseFetch(call);
+  const h = browser({ deviceId: 'phone', mobile: true, hash: '#pair=server-expired-invitation', backend });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.match(h.getNode('modal-root').innerHTML, /expirou ou já foi usado/);
+  await h.AC.playerActions['connect-retry'](); await flush();
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/claim').length, 1);
+  assert.equal(h.AC.connect.ready, false);
 });
 
 test('cookie reconnect requires no stored code and ignores older playback revisions', async () => {
@@ -517,4 +787,17 @@ test('unavailable public connection config fails closed and can be retried befor
   unavailable = false; await h.AC.playerActions['connect-retry'](); await flush();
   assert.equal(h.AC.connect.ready, true); assert.equal(h.AC.connect.cloud, true);
   assert.ok(h.calls.some(call => call.url === '/api/library'));
+});
+
+test('native transport diagnostics reach the connection screen while arbitrary network exceptions stay hidden', async () => {
+  for (const message of ['AC-TLS: Confira a data e escaneie outro QR.', 'secret-fixture-sensitive-exception']) {
+    const backend = cloudBackend();
+    backend.fetch = () => { throw new TypeError(message); };
+    const h = browser({ deviceId: 'phone', mobile: true, backend });
+    assert.equal(await h.AC.initConnect(), false);
+    const html = h.getNode('modal-root').innerHTML;
+    assert.doesNotMatch(html, /secret-fixture/);
+    if (message.startsWith('AC-TLS:')) assert.match(html, /AC-TLS: Confira a data/);
+    else assert.match(html, /Confira a internet/);
+  }
 });
