@@ -140,7 +140,7 @@
       if (command.type === 'play') {
         await ensureTrack(args.trackId);
         if (args.queue) S.queue = args.queue.slice();
-        if (args.trackId) AC.play(args.trackId, { localOnly: true });
+        if (args.trackId) AC.play(args.trackId, { localOnly: true, keepQueue: Number.isInteger(args.qi), queueIndex: args.qi });
         else if (!S.playing) AC.toggle();
       } else if (command.type === 'pause') { audio.pause(); S.playing = false; }
       else if (command.type === 'toggle') AC.toggle();
@@ -150,6 +150,10 @@
       else if (command.type === 'volume') AC.setVolume(args.volume);
       else if (command.type === 'shuffle') { S.shuffle = args.shuffle; }
       else if (command.type === 'repeat') { S.repeat = args.repeat; }
+      else if (command.type === 'queue') {
+        if (S.current && args.queue[args.qi] !== S.current.id) return;
+        AC.setPlaybackQueue(args.queue, args.qi);
+      }
       AC.paintPlayback();
     } finally { C.applying = false; AC.notifyPlayback(true); }
   }
@@ -501,7 +505,7 @@
     C.dialog = 'player';
     AC.openModal('<div class="now-playing-ambient" aria-hidden="true"></div>' +
       '<div class="now-playing-top"><button class="icon-btn" data-action="close-modal" aria-label="Recolher player">' + icon('close', 22) + '</button><span>TOCANDO AGORA</span><button class="icon-btn" data-action="queue" aria-label="Abrir fila">' + icon('queue', 22) + '</button></div>' +
-      '<div class="now-playing-main"><div class="now-playing-art" id="expanded-art"></div>' +
+      '<div class="now-playing-scroll"><div class="now-playing-main"><div class="now-playing-art" id="expanded-art"></div>' +
       '<p class="now-playing-kicker" id="expanded-kicker">Sua biblioteca</p>' +
       '<h2 class="now-playing-title" id="expanded-title"></h2><p class="now-playing-artist" id="expanded-artist"></p>' +
       '<div class="now-playing-actions"><button class="now-playing-chip" data-action="queue">' + icon('queue', 15) + ' Fila</button><button class="now-playing-chip" id="expanded-artist-chip" data-action="open-artist">' + icon('wave', 15) + ' Artista</button></div>' +
@@ -510,7 +514,7 @@
       '<button class="now-playing-device" data-action="connect-devices">' + icon('device', 18) + '<span id="expanded-device"></span></button></div>' +
       '<aside class="now-playing-details"><section class="now-playing-artist-card" id="expanded-artist-card"><span class="eyebrow">Sobre o artista</span><p>Carregando o perfil…</p></section>' +
       '<section class="now-playing-next"><div class="section-head"><h3>A seguir</h3><button class="link" data-action="queue">Ver fila</button></div><div id="expanded-next"></div></section>' +
-      '<button class="now-playing-radio-card" id="expanded-radio" data-action="start-radio"><span>' + icon('radio', 24) + '</span><strong>Continue descobrindo</strong><small>Inicie uma rádio a partir desta música</small>' + icon('arrow', 16) + '</button></aside>', 'modal now-playing-modal');
+      '<button class="now-playing-radio-card" id="expanded-radio" data-action="start-radio"><span>' + icon('radio', 24) + '</span><strong>Continue descobrindo</strong><small>Inicie uma rádio a partir desta música</small>' + icon('arrow', 16) + '</button></aside></div>', 'modal now-playing-modal');
     var seek = $('expanded-seek');
     seek.addEventListener('input', function () { seek.dataset.dragging = '1'; var time = $('expanded-current'); if (time) time.textContent = AC.fmtTime(Number(seek.value) / 1000 * S.current.duration); });
     seek.addEventListener('change', function () { AC.seekRatio(Number(seek.value) / 1000); delete seek.dataset.dragging; });

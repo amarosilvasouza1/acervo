@@ -162,4 +162,6 @@ test('playback telemetry and commands reject malformed fields and discard identi
   assert.deepEqual(validatePlaybackPatch({ queue: [], qi: 0, trackId: null, playing: false }, current), { queue: [], qi: -1, trackId: null, playing: false });
   for (const value of [{ type: 'shell' }, { type: 'seek', args: { position: -1 } }, { type: 'volume', args: { volume: 2 } }, { type: 'shuffle', args: { shuffle: 'yes' } }, { type: 'play', args: { qi: 4, queue: ['song'] } }]) assert.throws(() => validateCommand(value));
   assert.deepEqual(validateCommand({ type: 'shuffle', args: { shuffle: true, targetDeviceId: 'spoofed' } }), { type: 'shuffle', args: { shuffle: true } });
+  assert.deepEqual(validateCommand({ type: 'queue', args: { queue: ['song'], qi: 0, targetDeviceId: 'spoofed' } }), { type: 'queue', args: { queue: ['song'], qi: 0 } });
+  for (const args of [{ queue: ['song'], qi: -1 }, { queue: ['song'], qi: 1 }, { queue: [], qi: 0 }, { queue: ['../file'], qi: 0 }, { queue: Array(1001).fill('song'), qi: 0 }]) assert.throws(() => validateCommand({ type: 'queue', args }));
 });

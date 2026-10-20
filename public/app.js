@@ -310,6 +310,7 @@
       navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
     }
     notifyAndroid();
+    if (state.queueOpen && AC.renderQueue) AC.renderQueue();
   }
 
   function paintPlayer() {
@@ -346,7 +347,7 @@
   AC.play = function (id, opts) {
     var track = AC.trackById(id);
     if (!track) return;
-    if (!(opts && opts.localOnly) && AC.syncCommand && AC.syncCommand('play', { trackId: id, queue: state.queue.indexOf(id) >= 0 ? state.queue.slice() : state.tracks.map(function (t) { return t.id; }) })) return;
+    if (!(opts && opts.localOnly) && AC.syncCommand && AC.syncCommand('play', Object.assign({ trackId: id, queue: state.queue.indexOf(id) >= 0 ? state.queue.slice() : state.tracks.map(function (t) { return t.id; }) }, opts && Number.isInteger(opts.queueIndex) ? { qi: opts.queueIndex } : {}))) return;
     state.playAfterImport = null;
     var options = opts || {};
     if (!options.radio && !options.keepRadio) state.radio = false;
@@ -354,6 +355,8 @@
       state.radio = true;
       state.queue = [id];
       state.qi = 0;
+    } else if (options.keepQueue && state.queue[options.queueIndex] === id) {
+      state.qi = options.queueIndex;
     } else if (state.shuffle) {
       if (state.shuffleOrder.indexOf(id) === -1) state.shuffleOrder = buildShuffle(id);
       state.queue = state.shuffleOrder.slice();
@@ -704,6 +707,7 @@
 
   /* ---------- modal ---------- */
   AC.openModal = function (html, className) {
+    if (state.queueOpen && AC.closeQueue) AC.closeQueue();
     var scrim = $('scrim');
     var root = $('modal-root');
     if (scrim) scrim.hidden = false;
@@ -849,48 +853,97 @@
   };
 
   /* ---------- queue ---------- */
+  var queueFocus = null;
+  var queueOptions = -1;
+  var queueSignature = '';
+  function queueFocusAt(id) {
+    var target = $(id);
+    if (target && target.focus) target.focus();
+  }
+  function closeQueue() {
+    state.queueOpen = false;
+    AC.renderQueue();
+    if (queueFocus && queueFocus.isConnected !== false && queueFocus.focus) queueFocus.focus();
+    queueFocus = null;
+  }
+  AC.closeQueue = closeQueue;
+  function queueChanged() {
+    state.shuffleOrder = state.shuffle ? state.queue.slice() : state.shuffleOrder;
+    AC.renderQueue();
+    if (AC.paintExpandedPlayer) AC.paintExpandedPlayer();
+    if (AC.notifyPlayback) AC.notifyPlayback(true);
+  }
+  function applyQueue(list, index) {
+    if (AC.syncCommand && AC.syncCommand('queue', { queue: list, qi: index })) return;
+    state.queue = list; state.qi = index;
+    queueChanged();
+  }
+  AC.setPlaybackQueue = function (list, index) {
+    state.queue = list.slice(); state.qi = index;
+    queueChanged();
+  };
   AC.renderQueue = function () {
     var root = $('queue-root');
     if (!root) return;
-    var state = AC.state;
-    if (!state.queueOpen) { root.innerHTML = ''; return; }
-    var total = 0;
-    var list = state.queue.map(function (id, i) {
-      var t = AC.trackById(id);
-      if (!t) return '';
-      total += Number(t.duration) || 0;
-      return '<div class="qitem' + (i === state.qi ? ' is-current' : '') + '">' +
-        '<button class="qitem-main" data-action="play-track" data-id="' + AC.esc(id) + '" aria-label="Tocar ' + AC.esc(t.title) + '">' +
-        '<span class="qitem-index">' + (i === state.qi ? AC.icon('play', 12) : (i + 1)) + '</span>' +
-        '<span class="qitem-cover">' + AC.coverHtml(t) + '</span>' +
-        '<span class="qitem-copy"><span class="qitem-title">' + AC.esc(t.title) + '</span><span class="qitem-sub">' + AC.esc(t.artist) + ' · ' + AC.fmtTime(t.duration) + '</span></span>' +
-        '</button>' +
-        '<span class="qitem-actions">' +
-        '<button class="icon-btn" data-action="queue-up" data-index="' + i + '" aria-label="Mover para cima" title="Mover para cima">&uarr;</button>' +
-        '<button class="icon-btn" data-action="queue-down" data-index="' + i + '" aria-label="Mover para baixo" title="Mover para baixo">&darr;</button>' +
-        '<button class="icon-btn" data-action="queue-remove" data-index="' + i + '" aria-label="Remover da fila" title="Remover">&times;</button>' +
-        '</span></div>';
-    }).join('');
-    root.innerHTML = '<div class="queue-panel"><div class="queue-head"><span class="queue-head-icon">' + AC.icon('queue', 17) + '</span>' +
-      '<div class="queue-title"><h3>Fila de reprodução</h3><small>' + state.queue.length + (state.queue.length === 1 ? ' música' : ' músicas') + ' · ' + AC.fmtTime(total) + '</small></div>' +
-      '<div class="queue-head-actions"><button class="queue-clear" data-action="queue-clear">Limpar</button><button class="icon-btn" data-action="queue" aria-label="Fechar fila">' + AC.icon('close', 16) + '</button></div></div>' +
-      '<div class="queue-list">' + (list || '<div class="queue-empty">' + AC.icon('queue', 28) + '<strong>Fila vazia</strong><small>Toque em uma música para começar.</small></div>') + '</div></div>';
+    var modal = document.querySelector('.modal-wrap');
+    if (modal) {
+      if (state.queueOpen) modal.setAttribute('inert', '');
+      else modal.removeAttribute('inert');
+    }
+    if (!state.queueOpen) { root.innerHTML = ''; queueOptions = -1; queueSignature = ''; return; }
+    var signature = JSON.stringify([state.queue, state.qi, state.current && [state.current.id, state.current.title, state.current.artist], state.playing, queueOptions]);
+    if (signature === queueSignature) return;
+    queueSignature = signature;
+    var scroll = $('queue-list');
+    var scrollTop = scroll ? scroll.scrollTop || 0 : 0;
+    var focusedId = root.contains && root.contains(document.activeElement) ? document.activeElement.id : null;
+    var currentIndex = state.current && state.queue[state.qi] === state.current.id ? state.qi : -1;
+    var upcoming = [], previous = [];
+    state.queue.forEach(function (id, index) {
+      var track = AC.trackById(id);
+      if (!track || index === currentIndex) return;
+      (currentIndex >= 0 && index < currentIndex ? previous : upcoming).push({ track: track, index: index });
+    });
+    var total = upcoming.reduce(function (sum, item) { return sum + (Number(item.track.duration) || 0); }, 0);
+    function row(item) {
+      var track = item.track, index = item.index, editable = currentIndex < 0 || index > currentIndex;
+      var options = editable && queueOptions === index;
+      return '<div class="qitem' + (options ? ' is-expanded' : '') + '">' +
+        '<button class="qitem-main" data-action="queue-play" data-index="' + index + '" aria-label="Tocar ' + AC.esc(track.title) + '">' +
+        '<span class="qitem-cover">' + AC.coverHtml(track) + '</span><span class="qitem-copy"><span class="qitem-title">' + AC.esc(track.title) + '</span><span class="qitem-sub">' + AC.esc(track.artist) + '</span></span></button>' +
+        '<span class="qitem-duration">' + AC.fmtTime(track.duration) + '</span>' +
+        (editable ? '<button class="icon-btn qitem-menu" id="queue-more-' + index + '" data-action="queue-more" data-index="' + index + '" aria-expanded="' + !!options + '" aria-label="Opções de ' + AC.esc(track.title) + '">' + AC.icon('more', 20) + '</button>' : '') +
+        (options ? '<div class="qitem-options" role="group" aria-label="Editar posição de ' + AC.esc(track.title) + '">' +
+          '<button id="queue-up-' + index + '" data-action="queue-up" data-index="' + index + '"' + (index <= Math.max(0, currentIndex + 1) ? ' disabled' : '') + '>Mover para cima</button>' +
+          '<button data-action="queue-down" data-index="' + index + '"' + (index >= state.queue.length - 1 ? ' disabled' : '') + '>Mover para baixo</button>' +
+          '<button class="queue-remove" data-action="queue-remove" data-index="' + index + '">Remover</button></div>' : '') + '</div>';
+    }
+    var current = state.current;
+    var currentHtml = current ? '<section class="queue-current"><h3>Tocando agora</h3><div class="queue-current-track"><span class="qitem-cover">' + AC.coverHtml(current, true) + '</span><span class="qitem-copy"><strong>' + AC.esc(current.title) + '</strong><small>' + AC.esc(current.artist) + '</small></span><button class="icon-btn" id="queue-toggle" data-action="toggle" aria-label="' + (state.playing ? 'Pausar' : 'Reproduzir') + '">' + AC.icon(state.playing ? 'pause' : 'play', 22) + '</button></div></section>' : '';
+    root.innerHTML = '<div class="queue-layer"><button class="queue-backdrop" data-action="queue-close" tabindex="-1" aria-label="Fechar fila"></button>' +
+      '<section class="queue-panel" id="queue-dialog" role="dialog" aria-modal="true" aria-labelledby="queue-heading" tabindex="-1">' +
+      '<header class="queue-head"><div class="queue-title"><span class="eyebrow">Sua sessão</span><h2 id="queue-heading">Fila de reprodução</h2></div><button class="icon-btn" id="queue-close" data-action="queue-close" aria-label="Fechar fila">' + AC.icon('close', 22) + '</button></header>' +
+      currentHtml + '<div class="queue-section-head"><div><h3>A seguir</h3><p>' + upcoming.length + (upcoming.length === 1 ? ' música' : ' músicas') + ' · ' + AC.fmtDur(total) + '</p></div>' +
+      '<button class="queue-clear" data-action="queue-clear"' + (!upcoming.length ? ' disabled' : '') + '>Limpar próximas</button></div>' +
+      '<div class="queue-list" id="queue-list">' + (upcoming.length ? upcoming.map(row).join('') : '<div class="queue-empty">' + AC.icon('queue', 32) + '<strong>Nenhuma música a seguir</strong><small>Escolha outra música na biblioteca ou inicie uma rádio.</small></div>') +
+      (previous.length ? '<details class="queue-previous"><summary>Já passaram por aqui · ' + previous.length + '</summary>' + previous.map(row).join('') + '</details>' : '') +
+      '</div><footer class="queue-footer">As próximas músicas tocam na ordem desta lista.</footer></section></div>';
+    var list = $('queue-list'); if (list) list.scrollTop = scrollTop;
+    if (focusedId) queueFocusAt(focusedId);
   };
-
   function queueMove(from, to) {
-    var state = AC.state;
-    if (from < 0 || to < 0 || from >= state.queue.length || to >= state.queue.length) return;
-    var id = state.queue.splice(from, 1)[0];
-    state.queue.splice(to, 0, id);
-    if (state.qi === from) state.qi = to;
-    else if (from < state.qi && to >= state.qi) state.qi--;
-    else if (from > state.qi && to <= state.qi) state.qi++;
-    AC.renderQueue();
+    if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < 0 || from >= state.queue.length || to >= state.queue.length) return;
+    if (state.current && (from <= state.qi || to <= state.qi)) return;
+    var list = state.queue.slice(), id = list.splice(from, 1)[0]; list.splice(to, 0, id);
+    queueOptions = to;
+    applyQueue(list, state.qi);
+    queueFocusAt('queue-more-' + to);
   }
-
   AC.toggleQueue = function () {
-    state.queueOpen = !state.queueOpen;
-    AC.renderQueue();
+    if (state.queueOpen) { closeQueue(); return; }
+    queueFocus = document.activeElement;
+    queueOptions = -1; state.queueOpen = true;
+    AC.renderQueue(); queueFocusAt('queue-close');
   };
 
   /* ---------- action routing ---------- */
@@ -917,22 +970,33 @@
     },
     mute: function () { AC.toggleMute(); },
     queue: function () { AC.toggleQueue(); },
+    'queue-close': closeQueue,
+    'queue-play': function (el) {
+      var index = Number(el.getAttribute('data-index')), id = state.queue[index];
+      if (!Number.isInteger(index) || !id) return;
+      AC.play(id, { keepRadio: true, keepQueue: true, queueIndex: index });
+      AC.renderQueue(); queueFocusAt('queue-close');
+    },
+    'queue-more': function (el) {
+      var index = Number(el.getAttribute('data-index'));
+      queueOptions = queueOptions === index ? -1 : index;
+      AC.renderQueue(); queueFocusAt('queue-more-' + index);
+    },
     'queue-remove': function (el) {
-      var state = AC.state, i = Number(el.getAttribute('data-index'));
-      if (!Number.isInteger(i) || i < 0 || i >= state.queue.length) return;
-      state.queue.splice(i, 1);
-      if (state.qi > i) state.qi--;
-      else if (state.qi === i) state.qi = Math.min(i, Math.max(0, state.queue.length - 1));
-      AC.renderQueue();
+      var index = Number(el.getAttribute('data-index'));
+      if (!Number.isInteger(index) || index < 0 || index >= state.queue.length || (state.current && index <= state.qi)) return;
+      var list = state.queue.slice(); list.splice(index, 1); queueOptions = -1;
+      applyQueue(list, state.qi);
+      queueFocusAt('queue-close');
     },
     'queue-up': function (el) { queueMove(Number(el.getAttribute('data-index')), Number(el.getAttribute('data-index')) - 1); },
     'queue-down': function (el) { queueMove(Number(el.getAttribute('data-index')), Number(el.getAttribute('data-index')) + 1); },
     'queue-clear': function () {
-      var state = AC.state;
-      if (state.current) { state.queue = [state.current.id]; state.qi = 0; }
-      else { state.queue = []; state.qi = -1; }
-      AC.renderQueue();
-      AC.toast('Fila limpa; a música atual foi mantida.');
+      var current = state.current;
+      queueOptions = -1;
+      applyQueue(current ? [current.id] : [], current ? 0 : -1);
+      queueFocusAt('queue-close');
+      AC.toast('Próximas músicas removidas.');
     },
     menu: function () { document.body.classList.toggle('nav-open'); },
     'switch-version': function () {
@@ -971,6 +1035,14 @@
   });
 
   document.addEventListener('keydown', function (e) {
+    if (state.queueOpen && e.key === 'Tab') {
+      var dialog = $('queue-dialog');
+      var focusable = dialog ? dialog.querySelectorAll('button:not([disabled]), summary, [tabindex="0"]') : [];
+      var first = focusable[0], last = focusable[focusable.length - 1];
+      if (first && (e.shiftKey ? document.activeElement === first || document.activeElement === dialog : document.activeElement === last)) {
+        e.preventDefault(); (e.shiftKey ? last : first).focus(); return;
+      }
+    }
     var focusedAction = document.activeElement;
     if (e.defaultPrevented) return;
     if ((e.key === 'Enter' || e.code === 'Space') && focusedAction && focusedAction.getAttribute('role') === 'button' && focusedAction.hasAttribute('data-action') && focusedAction.tagName !== 'BUTTON') {
@@ -979,13 +1051,13 @@
       return;
     }
     if (e.key === 'Escape') {
-      if (state.queueOpen) { state.queueOpen = false; AC.renderQueue(); }
+      if (state.queueOpen) { closeQueue(); e.preventDefault(); return; }
       else AC.closeModals();
       document.body.classList.remove('nav-open');
     }
     var hasModal = document.getElementById('modal-root') && document.getElementById('modal-root').children.length > 0;
     var interactive = focusedAction && (/^(INPUT|TEXTAREA|SELECT|BUTTON|A)$/.test(focusedAction.tagName) || focusedAction.isContentEditable || focusedAction.getAttribute('role') === 'slider' || focusedAction.getAttribute('role') === 'checkbox');
-    if (e.code === 'Space' && !hasModal && !interactive) {
+    if (e.code === 'Space' && !state.queueOpen && !hasModal && !interactive) {
       e.preventDefault();
       AC.toggle();
     }

@@ -60,6 +60,9 @@ Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adic
 
 ## Novidades 1.5.9
 
+- Fila em painel próprio sobre o player, com música atual, próximas e histórico da sessão. As opções de mover e remover ficam no menu de cada faixa; editar a fila também funciona no dispositivo de reprodução conectado.
+- Player limitado à altura disponível, com cabeçalho fixo e rolagem interna. O fundo desfocado fica recortado dentro do painel.
+
 - Capas com faixas pretas uniformes em cima e embaixo recebem um recorte automático de exibição. A detecção exige bordas equilibradas e um limite visível com a imagem; capas escuras e casos incertos são preservados.
 - As capas já salvas no PC são verificadas sem alterar os originais. As versões de exibição ficam em `data/cover-display`, com cache por conteúdo.
 - No Android, o mesmo ajuste funciona nas capas salvas e novas, inclusive offline, no player e na notificação.

@@ -110,6 +110,38 @@ test('successful playlist import opens the populated playlist instead of throwin
   assert.deepEqual(h.calls.find(call => call.url === '/api/playlists/import').body, { url: 'https://youtube.com/playlist?list=fixture' });
 });
 
+test('queue has its own dismissible dialog and separates current, next and past without restarting audio', () => {
+  const h = browser();
+  h.AC.state.current = h.AC.state.tracks[0]; h.AC.state.queue = ['local-beta', 'local-alpha', 'local-beta']; h.AC.state.qi = 1;
+  const trigger = h.action('queue'); h.document.activeElement = trigger;
+  h.click(trigger);
+  const html = h.getNode('queue-root').innerHTML;
+  assert.match(html, /class="queue-layer"/); assert.match(html, /role="dialog" aria-modal="true"/);
+  assert.match(html, /Tocando agora/); assert.match(html, /A seguir/); assert.match(html, /Já passaram por aqui/);
+  assert.match(html, /Opções de Beta/); assert.doesNotMatch(html, /Opções de Alpha/);
+  assert.equal(h.document.activeElement, h.getNode('queue-close'));
+  assert.equal(h.audioCalls.length, 0);
+  const escape = h.key(h.getNode('queue-close'), 'Escape', 'Escape');
+  assert.equal(escape.defaultPrevented, true); assert.equal(h.AC.state.queueOpen, false);
+  assert.equal(h.getNode('queue-root').innerHTML, ''); assert.equal(h.document.activeElement, trigger);
+});
+
+test('queue editing preserves current audio and updates the expanded player and exact duplicate position', async () => {
+  const h = browser();
+  h.AC.state.current = h.AC.state.tracks[0]; h.AC.state.queue = ['local-alpha', 'local-beta', 'local-alpha']; h.AC.state.qi = 0;
+  let painted = 0; h.AC.paintExpandedPlayer = () => painted++;
+  h.click(h.action('queue'));
+  h.click(h.action('queue-down', { 'data-index': '1' }));
+  assert.deepEqual(plain(h.AC.state.queue), ['local-alpha', 'local-alpha', 'local-beta']);
+  assert.equal(h.AC.state.qi, 0); assert.equal(h.audioCalls.length, 0); assert.equal(painted, 1);
+  h.click(h.action('queue-remove', { 'data-index': '0' }));
+  assert.equal(h.AC.state.queue.length, 3, 'current track cannot be removed');
+  h.click(h.action('queue-play', { 'data-index': '1' })); await flush();
+  assert.equal(h.AC.state.qi, 1, 'the selected occurrence stays selected');
+  h.click(h.action('queue-clear')); assert.deepEqual(plain(h.AC.state.queue), ['local-alpha']);
+  assert.equal(h.AC.state.qi, 0);
+});
+
 test('discovery shortcuts route through the shared exploration view and mount the selected tab', () => {
   const h = browser(); const mounted = []; let left = 0;
   h.AC.exploreView = section => '<h1>Explore ' + section + '</h1>';

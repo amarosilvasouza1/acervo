@@ -117,6 +117,7 @@ test('expanded player shows the actual next track, escapes artist details and ig
   h.AC.openExpandedPlayer();
   assert.match(h.getNode('modal-root').innerHTML, /Sobre o artista/);
   assert.match(h.getNode('modal-root').innerHTML, /A seguir/);
+  assert.match(h.getNode('modal-root').innerHTML, /class="now-playing-scroll"/);
   assert.match(h.getNode('expanded-next').innerHTML, /data-id="two"/);
   assert.equal(h.getNode('expanded-radio').getAttribute('data-id'), 'one');
   waiting.resolve({ name: '<Artista>', biography: '<script>bad</script>', picture: 'javascript:alert(1)' });
@@ -127,6 +128,17 @@ test('expanded player shows the actual next track, escapes artist details and ig
   h.AC.state.current = { ...tracks[1], artist: 'New artist' };
   h.AC.closeModals(); h.AC.paintExpandedPlayer();
   assert.equal(h.getNode('expanded-artist-card').innerHTML, previous);
+});
+
+test('remote queue edits are applied on the output without playing or seeking the current music', async () => {
+  const { backend, pc, phone } = await connectedPair({ activeDeviceId: 'pc', trackId: 'one', queue: ['one', 'two'], qi: 0, playing: false, position: 37 });
+  const before = pc.audioCalls.filter(call => call.type === 'play').length;
+  phone.AC.playerActions['queue-clear'](); await flush();
+  assert.equal(backend.commands.at(-1).type, 'queue');
+  assert.deepEqual(plain(backend.commands.at(-1).args), { queue: ['one'], qi: 0 });
+  assert.deepEqual(plain(pc.AC.state.queue), ['one']);
+  assert.equal(pc.audioCalls.filter(call => call.type === 'play').length, before);
+  assert.equal(pc.AC.state.current.id, 'one');
 });
 const playback = overrides => ({ activeDeviceId: 'pc', trackId: 'one', queue: ['one', 'two'], qi: 0, playing: false, position: 37, volume: .85, shuffle: false, repeat: 'off', updatedAt: '2026-10-18T18:00:00Z', revision: 1, ...overrides });
 const device = (id, local = id === 'pc') => ({ id, name: id === 'pc' ? 'Meu computador' : 'Meu celular', kind: local ? 'desktop' : 'mobile', local, online: true, lastSeenAt: '2026-10-18T18:00:00Z' });
