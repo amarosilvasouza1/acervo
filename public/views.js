@@ -384,7 +384,7 @@
 
   /* ---------------- playlists e configurações ---------------- */
   function isPlaylistUrl(value) {
-    return /[?&]list=/.test(value) || /\/playlist(?:[/?]|$)/.test(value) || /^spotify:playlist:/i.test(value);
+    return /[?&]list=/.test(value) || /\/playlist(?:[/?]|$)/.test(value) || /\/track(?:[/?]|$)/.test(value) || /^spotify:(?:playlist|track):/i.test(value);
   }
 
   function trackForEntry(entry) {
@@ -393,12 +393,12 @@
 
   function viewPlaylists() {
     var list = S.playlists || [];
-    var head = '<div class="view-head"><div><h1>Playlists</h1><p class="sub">Traga suas playlists do Spotify ou YouTube e acompanhe cada música.</p></div>' +
+    var head = '<div class="view-head"><div><h1>Playlists</h1><p class="sub">Traga playlists e músicas do Spotify ou YouTube e acompanhe cada download.</p></div>' +
       '<div class="head-actions"><button class="btn btn-accent btn-sm" data-action="open-download">' + icon('link', 15) + ' Importar playlist</button></div></div>';
     if (!list.length) {
       return '<div class="view">' + head +
         '<div class="empty"><div class="empty-mark">' + icon('queue', 24) + '</div><h2>Suas playlists ficam aqui</h2>' +
-        '<p>Cole um link público do Spotify ou YouTube, ou importe um arquivo CSV/JSON. Confira a lista antes de começar e veja quais músicas não puderam ser baixadas.</p>' +
+        '<p>Cole um link público de playlist ou música do Spotify, um link do YouTube, ou importe um arquivo CSV/JSON. Confira antes de começar e veja quais músicas não puderam ser baixadas.</p>' +
         '<div class="playlist-steps"><span>1. Cole o link</span><span>2. O Acervo baixa</span><span>3. Toque quando quiser</span></div>' +
         '<button class="btn btn-accent" data-action="open-download">Importar uma playlist</button></div></div>';
     }
@@ -482,10 +482,10 @@
   /* ---------------- download modal ---------------- */
   function openDownload() {
     AC.openModal(
-      '<div class="modal-head"><div><h2>Adicionar músicas</h2><p>Cole uma playlist do Spotify ou YouTube, um vídeo ou o nome de uma música.</p></div>' +
+      '<div class="modal-head"><div><h2>Adicionar músicas</h2><p>Cole uma playlist ou música do Spotify, um link do YouTube ou o nome de uma música.</p></div>' +
       '<button class="icon-btn modal-close" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' +
       '<div class="modal-field">' + icon('link', 18) + '<input id="dl-input" aria-label="Link da playlist ou música" placeholder="Link do Spotify, YouTube ou nome da música" autocomplete="off"></div>' +
-      '<p class="modal-hint">Playlists passam por uma prévia. Você acompanha as músicas baixadas e as falhas. O link público do Spotify pode mostrar só parte da lista.</p>' +
+      '<p class="modal-hint">Playlists e músicas passam por uma prévia. Você acompanha os downloads e as falhas. O link público do Spotify pode mostrar só parte da lista.</p>' +
       (window.AcervoAndroid ? '<button class="btn btn-ghost playlist-file-button" data-action="playlist-file-native">Importar lista completa por arquivo</button>' : '<label class="playlist-file-label">Importar lista completa por arquivo <input id="playlist-file" type="file" accept=".csv,.json,text/csv,application/json"></label>') +
       '<p class="tiny">CSV: colunas Track Name e Artist Name(s), ou Título e Artista. JSON: arquivo de playlists dos seus dados do Spotify. Até 1000 músicas e 1,5 MB.</p>' +
       '<div class="modal-actions"><button class="btn btn-quiet" data-action="close-modal">Cancelar</button><button class="btn btn-accent" data-action="download-submit">' + icon('download', 16) + ' Baixar</button></div>'
@@ -523,7 +523,7 @@
   var previewPayload = null;
   var playlistImporting = false;
   async function previewPlaylist(payload) {
-    AC.toast('Lendo a playlist…');
+    AC.toast('Lendo do Spotify…');
     var data = await AC.api('/api/playlist/resolve', { method: 'POST', body: JSON.stringify(payload) });
     previewPayload = payload;
     if (data.choices) {
@@ -540,7 +540,7 @@
       '<button class="icon-btn" data-action="close-modal" aria-label="Fechar">' + icon('close', 18) + '</button></div>' + warnings +
       '<p class="modal-hint">' + (data.provider === 'spotify' ? 'Vamos buscar versões correspondentes no YouTube e manter os títulos e artistas desta lista. ' : '') + 'Cada música terá seu resultado e motivo em caso de falha.</p>' +
       '<ol class="playlist-preview">' + sample + '</ol>' + (data.entries.length > 5 ? '<p class="tiny">E mais ' + (data.entries.length - 5) + ' entradas.</p>' : '') +
-      '<div class="modal-actions"><button class="btn btn-quiet" data-action="open-download">Voltar</button><button class="btn btn-accent" data-action="playlist-preview-import">Importar ' + data.entries.length + ' entradas</button></div>');
+      '<div class="modal-actions"><button class="btn btn-quiet" data-action="open-download">Voltar</button><button class="btn btn-accent" data-action="playlist-preview-import">' + (data.entries.length === 1 ? 'Baixar música' : 'Importar ' + data.entries.length + ' entradas') + '</button></div>');
   }
 
   async function playlistReport(id) {

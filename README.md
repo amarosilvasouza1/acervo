@@ -58,7 +58,12 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.5
+## Novidades 1.5.6
+
+- **Link de música do Spotify:** cole uma faixa em `open.spotify.com/track/…` ou `spotify:track:…` e o Acervo busca título, artista e duração, procura a versão no YouTube e baixa como uma música única.
+- O fluxo de prévia e importação é o mesmo das playlists, com relatório de sucesso ou falha por faixa.
+
+## Histórico 1.5.5
 
 - **Notificação com linha do tempo real:** o player em segundo plano informa posição e duração continuamente, aceita seek e mostra play/pause, anterior e próxima.
 - O toque na notificação abre a tela que está tocando: o player nativo quando o áudio é local, ou o WebView conectado quando a música vem do Acervo do PC.
@@ -149,7 +154,7 @@ O endereço fica disponível apenas dentro da sua tailnet — não é publicado 
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.5.apk](releases/acervo-1.5.5.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
+Instale [releases/acervo-1.5.6.apk](releases/acervo-1.5.6.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
