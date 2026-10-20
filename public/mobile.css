@@ -430,3 +430,52 @@ button.connect-device:hover { background: #2a2a2a; }
 
 .artist-hero { min-height: 0; align-items: flex-start; }
 .now-playing-modal { background: #0b110d; } .now-playing-art { background: radial-gradient(circle at 30% 20%, #2a4a39, #0d1711 70%); border: 1px solid #ffffff14; } .now-playing-fallback { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; width: 100%; height: 100%; padding: 24px; text-align: center; color: #fff; } .now-playing-fallback svg { color: #1ed760; opacity: .8; } .now-playing-fallback strong { font-size: 20px; line-height: 1.25; } .now-playing-fallback small { color: #b3c7ba; font-size: 13px; }
+
+/* Expanded playback: one state, large artwork and useful listening context. */
+.now-playing-modal { width: min(960px, calc(100vw - 40px)); display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr); gap: 0 32px; padding: 28px; border-radius: 12px; }
+.now-playing-top { grid-column: 1 / -1; margin-bottom: 20px; }
+.now-playing-main { min-width: 0; }
+.now-playing-main .now-playing-art { width: min(100%, 400px); margin: 0 auto 24px; border-radius: 6px; }
+.now-playing-main .now-playing-title { text-align: left; font-size: clamp(24px, 2.4vw, 32px); }
+.now-playing-main .now-playing-artist { text-align: left; margin-bottom: 12px; }
+.now-playing-main .now-playing-kicker { text-align: left; font-size: 10px; margin-bottom: 12px; }
+.now-playing-actions { justify-content: flex-start; margin: 14px 0; flex-wrap: wrap; }
+.now-playing-details { min-width: 0; display: flex; flex-direction: column; gap: 18px; }
+.now-playing-artist-card, .now-playing-next { border-radius: 8px; background: #ffffff0a; overflow: hidden; }
+.np-artist-photo { display: block; width: 100%; height: 200px; object-fit: cover; }
+.np-artist-copy { padding: 22px; }
+.np-artist-copy h3, .now-playing-artist-card > h3 { font-size: 22px; margin: 12px 0; }
+.np-artist-copy p, .now-playing-artist-card > p { color: #c5cac6; font-size: 12px; line-height: 1.8; margin-bottom: 16px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+.now-playing-artist-card > .eyebrow, .now-playing-artist-card > h3, .now-playing-artist-card > p { margin-left: 22px; margin-right: 22px; }
+.now-playing-artist-card > .eyebrow { display: block; margin-top: 20px; }
+.now-playing-next { padding: 20px; }
+.now-playing-next .section-head { margin: 0 0 14px; }
+.now-playing-next h3 { font-size: 16px; margin: 0; }
+.now-playing-next .link { font-size: 11px; }
+.np-next-track { display: grid; grid-template-columns: 48px minmax(0, 1fr) 16px; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 0; }
+.np-next-track strong, .np-next-track small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.np-next-track strong { font-size: 12px; }
+.np-next-track small { font-size: 11px; color: var(--muted); margin-top: 6px; }
+.now-playing-radio-card { display: grid; grid-template-columns: 32px minmax(0, 1fr) 18px; gap: 6px 12px; padding: 20px; background: #1c3326; border-radius: 8px; text-align: left; }
+.now-playing-radio-card > span { grid-row: span 2; color: var(--accent); }
+.now-playing-radio-card strong { font-size: 13px; }
+.now-playing-radio-card small { grid-column: 2; font-size: 11px; color: #bacdc1; line-height: 1.6; }
+.now-playing-radio-card > svg { grid-column: 3; grid-row: 1 / span 2; }
+.now-playing-controls .is-on { color: var(--accent); }
+@media (max-width: 700px) {
+  .now-playing-modal { display: block; width: 100%; height: 100dvh; max-height: 100dvh; border: 0; border-radius: 0; padding: max(16px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); }
+  .modal-wrap:has(.now-playing-modal) { padding: 0; }
+  .now-playing-main .now-playing-art { width: min(100%, 380px); margin-top: 12px; }
+  .now-playing-details { margin-top: 24px; }
+  .np-artist-photo { height: 230px; }
+  .artist-hero-editorial { min-height: 360px; padding: 24px; gap: 16px; align-items: flex-start; }
+  .artist-hero-editorial .artist-hero-picture { width: 100px; height: 100px; flex-basis: 100px; }
+  .artist-hero-editorial h1 { font-size: 44px; }
+  .artist-command-bar { gap: 12px; padding: 20px 0; }
+  .artist-section-nav { gap: 24px; }
+  .artist-about-layout { grid-template-columns: minmax(0, 1fr); }
+  .artist-about-photo { min-height: 0; height: 240px; }
+  .artist-about-layout .artist-biography { padding: 24px; }
+  .artist-track-row { grid-template-columns: 18px 40px minmax(0, 1fr) auto; gap: 10px; }
+  .artist-track-row > .catalog-meta { display: none; }
+}

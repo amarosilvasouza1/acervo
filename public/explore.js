@@ -103,12 +103,12 @@
       (artists.length ? '<section class="artist-section"><div class="section-head"><h2>Artistas para explorar</h2></div>' + artistCards(artists) + '</section>' : '');
   }
   function popularMarkup(tracks, prefix) {
-    var list = tracks.filter(Boolean).slice(0, 5);
+    var list = tracks.filter(Boolean).slice(0, 10);
     return '<div class="artist-popular">' + list.map(function (track, index) {
       var saved = savedTrack(track);
       var cover = saved && saved.hasCover ? AC.coverHtml(saved) : image(track.thumbnail, 'wave', 'artist-track-cover');
       return '<div class="artist-track-row"><span class="artist-track-index">' + (index + 1) + '</span><span class="artist-track-art">' + cover + '</span>' +
-        '<span class="artist-track-title">' + esc(track.title) + (track.album ? '<small>' + esc(track.album) + '</small>' : '') + '</span>' +
+        '<button class="artist-track-title" data-action="' + (saved ? 'explore-play' : 'catalog-search') + '" data-explore-key="' + esc(prefix + ':' + index) + '" data-query="' + esc(queryFor(track)) + '">' + esc(track.title) + (track.album ? '<small>' + esc(track.album) + '</small>' : '') + '</button>' +
         '<span class="catalog-meta">' + (track.duration ? AC.fmtTime(track.duration) : '') + '</span>' + playButton(track, prefix + ':' + index, 'icon-btn artist-track-play') + '</div>';
     }).join('') + '</div>';
   }
@@ -117,6 +117,7 @@
     var popular = Array.isArray(data.topTracks) ? data.topTracks : [];
     var albums = Array.isArray(data.albums) ? data.albums : [];
     var related = Array.isArray(data.relatedArtists) ? data.relatedArtists : [];
+    local = local.slice().sort(function (a, b) { return (b.plays || 0) - (a.plays || 0); });
     var label = data.name || name;
     var localCover = local.find(function (track) { return track.hasCover && track.id; });
     var art = '';
@@ -133,17 +134,26 @@
     var playAll = local.length ? '<button class="btn btn-accent" data-action="artist-play-all" data-artist="' + esc(label) + '">' + AC.icon('play', 15) + ' Tocar tudo</button>' : '';
     var followers = typeof data.followers === 'number' && Number.isFinite(data.followers) && data.followers >= 0
       ? '<p class="artist-followers">' + new Intl.NumberFormat('pt-BR').format(data.followers) + ' ' + esc(data.followersLabel || 'seguidores no catálogo') + '</p>' : '';
-    return '<header class="artist-hero">' + (art ? '<div class="artist-hero-backdrop" style="background-image:url(\'' + esc(art).replace(/'/g, '%27') + '\')"></div><div class="artist-hero-shade"></div>' : '') +
+    var tabs = [['artist-popular-section', 'Músicas'], ['artist-albums-section', 'Discografia'], ['artist-about-section', 'Sobre']].map(function (item) {
+      return '<button class="artist-section-link" data-action="artist-section" data-section="' + item[0] + '">' + item[1] + '</button>';
+    }).join('');
+    var minutes = Math.round(local.reduce(function (sum, track) { return sum + (Number(track.duration) || 0); }, 0) / 60);
+    var plays = local.reduce(function (sum, track) { return sum + (Number(track.plays) || 0); }, 0);
+    return '<header class="artist-hero artist-hero-editorial">' + (art ? '<div class="artist-hero-backdrop" style="background-image:url(\'' + esc(art).replace(/'/g, '%27') + '\')"></div><div class="artist-hero-shade"></div>' : '') +
       image(art, 'wave', 'artist-hero-picture') +
-      '<div class="artist-hero-copy"><p class="eyebrow">Artista</p><h1>' + esc(label) + '</h1>' +
+      '<div class="artist-hero-copy"><p class="eyebrow">' + AC.icon('wave', 16) + ' Artista' + (data.catalogMatched ? ' · perfil do catálogo' : '') + '</p><h1>' + esc(label) + '</h1>' +
       (stats.length ? '<p class="artist-stats">' + esc(stats.join(' · ')) + '</p>' : '') + followers +
-      '<div class="artist-hero-actions">' + playAll + '<button class="btn btn-quiet" data-action="catalog-search" data-query="' + esc(label) + '">' + AC.icon('search', 15) + ' Buscar músicas</button>' + sourceLink(data.sourceUrl, 'Ver artista na fonte') + '</div></div></header>' + notices(data.warnings) +
-      (local.length ? '<section class="artist-section"><div class="section-head"><h2>No seu acervo</h2></div>' + popularMarkup(local, 'local:' + name) + '</section>' : '') +
-      (popular.length ? '<section class="artist-section"><div class="section-head"><h2>Mais ouvidas no catálogo</h2></div>' + popularMarkup(popular, 'popular:' + name) + '</section>' : '') +
-      (albums.length ? '<section class="artist-section"><div class="section-head"><h2>Discografia</h2></div><div class="album-grid">' + albums.map(function (album, index) {
+      '</div></header><div class="artist-command-bar">' + playAll + '<button class="btn btn-ghost" data-action="catalog-search" data-query="' + esc(label) + '">' + AC.icon('search', 15) + ' Buscar músicas</button>' + sourceLink(data.sourceUrl, 'Ver artista na fonte') + '</div>' +
+      '<nav class="artist-section-nav" aria-label="Seções do artista">' + tabs + '</nav>' + notices(data.warnings) +
+      '<div class="artist-overview-grid"><section class="artist-section" id="artist-popular-section"><div class="section-head"><h2>' + (popular.length ? 'Populares' : 'Destaques no seu acervo') + '</h2></div>' +
+      (popular.length ? '<p class="tiny artist-section-description">Mais ouvidas no catálogo · escolha uma versão para ouvir.</p>' + popularMarkup(popular, 'popular:' + name) : local.length ? popularMarkup(local, 'local:' + name) : '<p class="artist-section-empty">O catálogo ainda não retornou músicas para este perfil. Use Buscar músicas para explorar.</p>') + '</section>' +
+      '<aside class="artist-listening-card"><span class="eyebrow">Sua coleção</span><h2>' + local.length + '<small> músicas salvas</small></h2><p>Seu espaço para ouvir ' + esc(label) + '.</p><div class="artist-listening-stats"><span><strong>' + minutes + '</strong> min de música</span><span><strong>' + plays + '</strong> reproduções suas</span></div>' +
+      (local[0] ? '<button class="artist-featured-track" data-action="play-track" data-id="' + esc(local[0].id) + '"><span class="artist-featured-cover">' + AC.coverHtml(local[0]) + '</span><span><small>Mais ouvida por você</small><strong>' + esc(local[0].title) + '</strong></span>' + AC.icon('play', 16) + '</button>' : '') + '</aside></div>' +
+      (popular.length && local.length ? '<section class="artist-section"><div class="section-head"><h2>No seu acervo</h2><span class="tiny">' + local.length + ' músicas</span></div>' + popularMarkup(local, 'local:' + name) + '</section>' : '') +
+      '<section class="artist-section" id="artist-albums-section"><div class="section-head"><h2>Discografia</h2><span class="tiny">Álbuns e lançamentos</span></div>' + (albums.length ? '<div class="album-grid">' + albums.map(function (album, index) {
         return catalogCard(Object.assign({}, album, { kind: 'album', artist: album.artist || label }), 'album:' + name + ':' + index, true);
-      }).join('') + '</div></section>' : '') +
-      (data.biography ? '<section class="artist-section artist-biography"><div class="section-head"><h2>Sobre ' + esc(label) + '</h2></div><p>' + esc(data.biography) + '</p>' + sourceLink(data.bioSourceUrl, data.bioSourceName || 'Fonte da biografia') + '</section>' : '') +
+      }).join('') + '</div>' : '<p class="artist-section-empty">A discografia não está disponível neste catálogo agora.</p>') + '</section>' +
+      '<section class="artist-section artist-about-layout" id="artist-about-section">' + image(art, 'wave', 'artist-about-photo') + '<div class="artist-biography"><div class="section-head"><h2>Sobre ' + esc(label) + '</h2></div><p>' + esc(data.biography || 'Ainda não há uma biografia confirmada para este artista. Você pode explorar as músicas e os links disponíveis sem perder sua coleção.') + '</p>' + sourceLink(data.bioSourceUrl || data.sourceUrl, data.bioSourceName || (data.biography ? 'Fonte da biografia' : 'Ver perfil na fonte')) + '</div></section>' +
       (related.length ? '<section class="artist-section"><div class="section-head"><h2>Artistas relacionados</h2></div>' + artistCards(related) + '</section>' : '') +
       (!local.length && !popular.length && !albums.length && !data.biography ? empty(data.catalogMatched === false ? 'Não encontramos um perfil confirmado para este nome. Use a busca para encontrar as músicas.' : 'O catálogo não retornou músicas deste artista agora.') : '');
   }
@@ -212,6 +222,15 @@
   }
   AC.mountExplore = function (section) { return mount('feed', sectionName(section)); };
   AC.mountArtist = function (name) { name = artistName(name); return name ? mount('artist', name) : Promise.resolve(); };
+  AC.artistSummary = async function (name) {
+    name = artistName(name);
+    var epoch = S.authEpoch, id = identity('artist', name), entry = cache[id];
+    if (usable(entry) && entry.data && Date.now() - entry.at < CACHE_AGE) return entry.data;
+    var data = await AC.api('/api/artist?name=' + encodeURIComponent(name));
+    if (epoch !== S.authEpoch) return null;
+    cache[id] = { data: data, epoch: epoch, at: Date.now() };
+    return data;
+  };
   AC.invalidateExplore = function (section) {
     Object.keys(cache).forEach(function (key) {
       if (!section || key === identity('feed', sectionName(section))) delete cache[key];
@@ -235,6 +254,12 @@
     AC.go('artist');
   };
   AC.playerActions['open-artist'] = function (element) { AC.openArtist(element.getAttribute('data-artist')); };
+  AC.playerActions['artist-section'] = function (element) {
+    var id = element.getAttribute('data-section');
+    if (['artist-popular-section', 'artist-albums-section', 'artist-about-section'].indexOf(id) === -1) return;
+    var section = document.getElementById(id);
+    if (section && section.scrollIntoView) section.scrollIntoView({ behavior: window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  };
   AC.playerActions['artist-play-all'] = function (element) {
     var name = element.getAttribute('data-artist');
     var entry = cache[identity('artist', name)];

@@ -182,11 +182,29 @@ public final class MobileLibrary {
             long expected = connection.getContentLengthLong();
             if (expected > MAX_DOWNLOAD) throw new IOException("Este áudio ultrapassa o limite de 250 MB.");
             if (audioFolder.getUsableSpace() < FREE_RESERVE + Math.max(0, expected)) throw new IOException("Não há espaço suficiente no celular para baixar esta música.");
+            boolean ranged = false;
+            if (expected >= 2L * 1024 * 1024) {
+                connection.disconnect(); connection = null;
+                final long[] lastNotice = { 0 }, lastSpace = { 0 };
+                ranged = RangeDownload.copy(partial, expected,
+                        (start, end, validator) -> openHttps(song.url, "bytes=" + start + "-" + end, validator),
+                        (received, total) -> {
+                            if (received - lastSpace[0] >= 1024 * 1024) {
+                                lastSpace[0] = received;
+                                if (audioFolder.getUsableSpace() < FREE_RESERVE) throw new IOException("O espaço livre do celular acabou durante o download.");
+                            }
+                            long current = android.os.SystemClock.elapsedRealtime();
+                            if (progress != null && (current - lastNotice[0] >= 180 || received == total)) {
+                                lastNotice[0] = current; progress.update(received, total);
+                            }
+                        });
+                if (!ranged) connection = openHttps(song.url);
+            }
             long received = 0;
             long lastProgress = 0;
             long lastSpaceCheck = 0;
-            try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(partial)) {
-                byte[] buffer = new byte[32 * 1024];
+            if (!ranged) try (InputStream input = connection.getInputStream(); FileOutputStream output = new FileOutputStream(partial)) {
+                byte[] buffer = new byte[128 * 1024];
                 int count;
                 while ((count = input.read(buffer)) != -1) {
                     if (Thread.currentThread().isInterrupted()) throw new IOException("Download interrompido.");
@@ -204,6 +222,7 @@ public final class MobileLibrary {
                 }
                 output.getFD().sync();
             }
+            if (ranged) received = expected;
             if (received == 0 || (expected >= 0 && received != expected)) throw new IOException("O download ficou incompleto. Tente novamente.");
             synchronized (store) {
                 existing = get(song.id);
@@ -270,6 +289,10 @@ public final class MobileLibrary {
 
     /** Every redirect is validated; an HTTPS audio or cover request cannot downgrade to HTTP. */
     static HttpURLConnection openHttps(String value) throws Exception {
+        return openHttps(value, null, null);
+    }
+
+    private static HttpURLConnection openHttps(String value, String range, String validator) throws Exception {
         String current = value;
         for (int redirects = 0; redirects <= 5; redirects++) {
             URI uri = new URI(current);
@@ -282,10 +305,12 @@ public final class MobileLibrary {
             connection.setReadTimeout(20000);
             connection.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 13) AcervoAndroid/1.2");
             connection.setRequestProperty("Accept-Encoding", "identity");
+            if (range != null) connection.setRequestProperty("Range", range);
+            if (validator != null) connection.setRequestProperty("If-Range", validator);
             int status;
             try { status = connection.getResponseCode(); }
             catch (IOException failure) { connection.disconnect(); throw failure; }
-            if (status == 200) return connection;
+            if (status == 200 || (range != null && status == 206)) return connection;
             if (status >= 300 && status <= 399) {
                 String location = connection.getHeaderField("Location");
                 connection.disconnect();

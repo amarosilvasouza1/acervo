@@ -501,13 +501,16 @@
     C.dialog = 'player';
     AC.openModal('<div class="now-playing-ambient" aria-hidden="true"></div>' +
       '<div class="now-playing-top"><button class="icon-btn" data-action="close-modal" aria-label="Recolher player">' + icon('close', 22) + '</button><span>TOCANDO AGORA</span><button class="icon-btn" data-action="queue" aria-label="Abrir fila">' + icon('queue', 22) + '</button></div>' +
-      '<div class="now-playing-art" id="expanded-art"></div>' +
+      '<div class="now-playing-main"><div class="now-playing-art" id="expanded-art"></div>' +
       '<p class="now-playing-kicker" id="expanded-kicker">Sua biblioteca</p>' +
       '<h2 class="now-playing-title" id="expanded-title"></h2><p class="now-playing-artist" id="expanded-artist"></p>' +
       '<div class="now-playing-actions"><button class="now-playing-chip" data-action="queue">' + icon('queue', 15) + ' Fila</button><button class="now-playing-chip" id="expanded-artist-chip" data-action="open-artist">' + icon('wave', 15) + ' Artista</button></div>' +
       '<input id="expanded-seek" class="now-playing-seek" type="range" min="0" max="1000" step="1" value="0" aria-label="Posição da música"><div class="now-playing-times"><span id="expanded-current"></span><span id="expanded-duration"></span></div>' +
       '<div class="now-playing-controls"><button class="icon-btn" data-action="shuffle" aria-label="Aleatório">' + icon('shuffle', 22) + '</button><button class="icon-btn" data-action="prev" aria-label="Anterior">' + icon('prev', 27) + '</button><button class="play-btn" id="expanded-toggle" data-action="toggle" aria-label="Pausar"></button><button class="icon-btn" data-action="next" aria-label="Próxima">' + icon('next', 27) + '</button><button class="icon-btn" data-action="repeat" aria-label="Repetir">' + icon('repeat', 22) + '</button></div>' +
-      '<button class="now-playing-device" data-action="connect-devices">' + icon('device', 18) + '<span id="expanded-device"></span></button>', 'modal now-playing-modal');
+      '<button class="now-playing-device" data-action="connect-devices">' + icon('device', 18) + '<span id="expanded-device"></span></button></div>' +
+      '<aside class="now-playing-details"><section class="now-playing-artist-card" id="expanded-artist-card"><span class="eyebrow">Sobre o artista</span><p>Carregando o perfil…</p></section>' +
+      '<section class="now-playing-next"><div class="section-head"><h3>A seguir</h3><button class="link" data-action="queue">Ver fila</button></div><div id="expanded-next"></div></section>' +
+      '<button class="now-playing-radio-card" id="expanded-radio" data-action="start-radio"><span>' + icon('radio', 24) + '</span><strong>Continue descobrindo</strong><small>Inicie uma rádio a partir desta música</small>' + icon('arrow', 16) + '</button></aside>', 'modal now-playing-modal');
     var seek = $('expanded-seek');
     seek.addEventListener('input', function () { seek.dataset.dragging = '1'; var time = $('expanded-current'); if (time) time.textContent = AC.fmtTime(Number(seek.value) / 1000 * S.current.duration); });
     seek.addEventListener('change', function () { AC.seekRatio(Number(seek.value) / 1000); delete seek.dataset.dragging; });
@@ -532,6 +535,37 @@
     var artist = $('expanded-artist'); if (artist) artist.textContent = track.artist;
     var kicker = $('expanded-kicker'); if (kicker) kicker.textContent = track.album || 'Sua biblioteca';
     var artistChip = $('expanded-artist-chip'); if (artistChip) artistChip.setAttribute('data-artist', track.artist || '');
+    var radio = $('expanded-radio'); if (radio) radio.setAttribute('data-id', track.id);
+    var shuffle = document.querySelector('.now-playing-controls [data-action="shuffle"]'); if (shuffle) { shuffle.classList.toggle('is-on', S.shuffle); shuffle.setAttribute('aria-pressed', String(S.shuffle)); }
+    var repeat = document.querySelector('.now-playing-controls [data-action="repeat"]'); if (repeat) { repeat.classList.toggle('is-on', S.repeat !== 'off'); repeat.setAttribute('aria-label', S.repeat === 'one' ? 'Repetindo esta música' : S.repeat === 'all' ? 'Repetindo a fila' : 'Repetir'); }
+    var nextRoot = $('expanded-next');
+    var nextIds = (S.queue || []).slice((S.qi || 0) + 1).filter(function (id) { return !!AC.trackById(id); }).slice(0, 3);
+    var nextSignature = JSON.stringify(nextIds);
+    if (nextRoot && nextRoot.dataset.signature !== nextSignature) {
+      nextRoot.dataset.signature = nextSignature;
+      nextRoot.innerHTML = nextIds.map(function (id) {
+        var item = AC.trackById(id);
+        return '<button class="np-next-track" data-action="play-track" data-id="' + esc(id) + '"><span class="np-next-cover">' + AC.coverHtml(item) + '</span><span><strong>' + esc(item.title) + '</strong><small>' + esc(item.artist) + '</small></span>' + icon('play', 15) + '</button>';
+      }).join('') || '<p class="tiny">Você chegou ao fim da fila. Escolha outra música ou inicie uma rádio.</p>';
+    }
+    var artistCard = $('expanded-artist-card');
+    var artistSignature = (S.authEpoch || 0) + ':' + track.artist;
+    if (artistCard && artistCard.dataset.artist !== artistSignature) {
+      artistCard.dataset.artist = artistSignature;
+      artistCard.innerHTML = '<span class="eyebrow">Sobre o artista</span><h3>' + esc(track.artist) + '</h3><p>Seu próximo encontro com a música.</p>';
+      if (AC.artistSummary) AC.artistSummary(track.artist).then(function (data) {
+        if (!data || C.dialog !== 'player' || !S.current || S.current.artist !== track.artist || artistCard.dataset.artist !== artistSignature) return;
+        var picture = data.picture || (track.hasCover ? '/api/cover/' + encodeURIComponent(track.id) : '');
+        if (!/^\/api\/cover\/[A-Za-z0-9_-]+$/.test(picture)) {
+          try { var url = new URL(picture); if (url.protocol !== 'https:' || url.username || url.password) picture = ''; } catch (ignored) { picture = ''; }
+        }
+        artistCard.innerHTML = (picture ? '<img class="np-artist-photo" src="' + esc(picture) + '" alt="" loading="lazy" referrerpolicy="no-referrer">' : '') +
+          '<div class="np-artist-copy"><span class="eyebrow">Sobre o artista</span><h3>' + esc(data.name || track.artist) + '</h3><p>' + esc(data.biography || ((data.localTracks || []).length + ' músicas deste artista no seu acervo. Explore os destaques e os álbuns disponíveis.')) + '</p>' +
+          '<button class="btn btn-ghost btn-sm" data-action="open-artist" data-artist="' + esc(track.artist) + '">Abrir perfil</button></div>';
+      }).catch(function () {
+        if (artistCard.dataset.artist === artistSignature) artistCard.innerHTML = '<div class="np-artist-copy"><span class="eyebrow">Sobre o artista</span><h3>' + esc(track.artist) + '</h3><p>O perfil está indisponível agora.</p><button class="btn btn-ghost btn-sm" data-action="open-artist" data-artist="' + esc(track.artist) + '">Ver músicas do artista</button></div>';
+      });
+    }
     var cur = AC.isRemotePlayback() ? AC.remotePosition() : audio.currentTime || 0;
     var seek = $('expanded-seek'); if (seek && !seek.dataset.dragging) seek.value = String(Math.round(cur / Math.max(1, track.duration) * 1000));
     var current = $('expanded-current'); if (current && (!seek || !seek.dataset.dragging)) current.textContent = AC.fmtTime(cur);

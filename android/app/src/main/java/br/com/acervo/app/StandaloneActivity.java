@@ -96,6 +96,9 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
     private TextView expandedTitle, expandedArtist;
     private ImageView expandedCover;
     private Button expandedPlay;
+    private LinearLayout expandedContext;
+    private final Map<String, MobileArtistCatalog.Profile> artistProfiles = new LinkedHashMap<>();
+    private final Set<String> artistLookups = new java.util.HashSet<>();
     private TextView status, playerTitle, playerArtist, elapsed, remaining;
     private EditText query;
     private Button searchButton, playButton;
@@ -651,20 +654,28 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         Button back = iconButton("back", "Voltar", false);
         back.setOnClickListener(v -> select(artistOrigin));
         content.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        LinearLayout hero = column();
-        hero.setGravity(Gravity.CENTER_HORIZONTAL);
-        hero.setPadding(dp(16), dp(12), dp(16), dp(24));
-        View avatar = artistAvatar(artistName, 160);
-        hero.addView(avatar, new LinearLayout.LayoutParams(dp(160), dp(160)));
-        TextView name = text(artistName, 38, Color.WHITE, true);
-        name.setGravity(Gravity.CENTER);
-        add(hero, name, 18);
-        TextView label = text("NA SUA BIBLIOTECA", 10, MUTED, true);
-        label.setGravity(Gravity.CENTER);
-        add(hero, label, 10);
-        add(content, hero, 0);
+        final String requestedArtist = artistName;
         List<MobileLibrary.Track> tracks = new ArrayList<>();
         for (MobileLibrary.Track track : library.all()) if (track.artist != null && artistName.equalsIgnoreCase(track.artist.trim())) tracks.add(track);
+        if (!artistProfiles.containsKey(artistName)) artistProfiles.put(artistName, MobileArtistCatalog.saved(getFilesDir(), artistName));
+        MobileArtistCatalog.Profile profile = artistProfiles.get(artistName);
+        FrameLayout banner = new FrameLayout(this);
+        banner.setBackground(rounded(Color.rgb(36, 53, 43), 8)); banner.setClipToOutline(true);
+        ImageView heroImage = new ImageView(this); heroImage.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        banner.addView(heroImage, new FrameLayout.LayoutParams(-1, -1));
+        if (profile != null && !profile.picture.isEmpty()) loadCover(heroImage, profile.picture);
+        else if (!tracks.isEmpty()) loadCover(heroImage, tracks.get(0).thumbnail);
+        View shade = new View(this);
+        shade.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[] { 0x18000000, 0xf509110c }));
+        banner.addView(shade, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout hero = column();
+        hero.setPadding(dp(22), dp(24), dp(22), dp(24));
+        TextView category = text("ARTISTA", 11, Color.WHITE, true); add(hero, category, 0);
+        TextView name = text(artistName, 38, Color.WHITE, true);
+        add(hero, name, 18);
+        add(hero, text(tracks.size() + " músicas no seu celular", 13, Color.WHITE, false), 10);
+        banner.addView(hero, new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM));
+        add(content, banner, 8); banner.getLayoutParams().height = dp(320);
         long duration = 0;
         for (MobileLibrary.Track track : tracks) duration += track.duration;
         add(content, text(tracks.size() + (tracks.size() == 1 ? " música salva" : " músicas salvas")
@@ -681,6 +692,19 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         findParams.leftMargin = tracks.isEmpty() ? 0 : dp(8);
         actions.addView(find, findParams);
         add(content, actions, 18);
+        LinearLayout catalog = column(); add(content, catalog, 22);
+        renderArtistCatalog(catalog, requestedArtist, profile);
+        if (online() && artistLookups.add(requestedArtist)) work.execute(() -> {
+            MobileArtistCatalog.Profile fetched = null;
+            try { fetched = MobileArtistCatalog.fetch(getFilesDir(), requestedArtist, tracks); } catch (Exception ignored) { }
+            final MobileArtistCatalog.Profile result = fetched;
+            post(() -> {
+                if (result != null) artistProfiles.put(requestedArtist, result);
+                if (mode != Mode.ARTIST || !requestedArtist.equals(artistName)) return;
+                if (result != null && !result.picture.isEmpty()) loadCover(heroImage, result.picture);
+                renderArtistCatalog(catalog, requestedArtist, result != null ? result : artistProfiles.get(requestedArtist));
+            });
+        });
         if (!tracks.isEmpty()) {
             section("Músicas no seu celular", "Disponíveis para ouvir offline.");
             for (MobileLibrary.Track track : tracks) add(content, savedRow(track), 8);
@@ -699,6 +723,49 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 + "As informações vêm dos arquivos salvos neste celular. O perfil continua disponível offline.", 14, MUTED, false), 12);
     }
 
+    private void renderArtistCatalog(LinearLayout target, String name, MobileArtistCatalog.Profile profile) {
+        target.removeAllViews();
+        if (profile == null) {
+            add(target, text("Discografia", 23, Color.WHITE, true), 0);
+            add(target, text(!online() ? "Conecte à internet para consultar os álbuns deste artista. Sua coleção continua disponível." : artistLookups.contains(name) ? "Não encontramos uma discografia confirmada para este nome. Explore as músicas salvas abaixo ou use Buscar músicas." : "Consultando um perfil compatível no catálogo. As músicas salvas aparecem abaixo.", 13, MUTED, false), 12);
+            return;
+        }
+        if (profile.source.matches("https://www\\.deezer\\.com/artist/[0-9]+")) {
+            Button source = button("Ver artista no Deezer ↗", false);
+            source.setOnClickListener(view -> {
+                try { startActivity(new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(profile.source))); }
+                catch (android.content.ActivityNotFoundException ignored) { toast("Nenhum navegador disponível."); }
+            });
+            add(target, source, 0);
+        }
+        if (!profile.titles.isEmpty()) {
+            add(target, text("Populares no catálogo", 23, Color.WHITE, true), 20);
+            add(target, text("Toque no nome para buscar uma versão para ouvir.", 12, MUTED, false), 8);
+            for (int i = 0; i < Math.min(5, profile.titles.size()); i++) {
+                final String title = profile.titles.get(i);
+                LinearLayout line = row(); line.setPadding(0, dp(12), 0, dp(12));
+                TextView number = text(String.valueOf(i + 1), 13, MUTED, false); line.addView(number, new LinearLayout.LayoutParams(dp(28), -2));
+                TextView label = text(title, 14, Color.WHITE, true); line.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+                Button search = iconButton("search", "Buscar " + title, false); line.addView(search);
+                View.OnClickListener find = view -> { select(Mode.SEARCH); query.setText(title + " " + name); search(title + " " + name, false); };
+                line.setOnClickListener(find); search.setOnClickListener(find); add(target, line, 6);
+            }
+        }
+        add(target, text("Discografia", 23, Color.WHITE, true), 24);
+        if (profile.albums.isEmpty()) { add(target, text("Este catálogo ainda não disponibilizou os álbuns.", 13, MUTED, false), 12); return; }
+        HorizontalScrollView scroll = new HorizontalScrollView(this); scroll.setHorizontalScrollBarEnabled(false);
+        LinearLayout rail = row(); rail.setGravity(Gravity.TOP);
+        for (MobileArtistCatalog.Album album : profile.albums) {
+            LinearLayout tile = column(); tile.addView(artwork(album.picture, 144));
+            TextView title = text(album.title, 13, Color.WHITE, true); title.setMaxLines(2); add(tile, title, 10);
+            add(tile, text(album.date.length() >= 4 ? album.date.substring(0, 4) + " · Álbum" : "Álbum", 11, MUTED, false), 5);
+            tile.setOnClickListener(view -> { select(Mode.SEARCH); query.setText(name + " " + album.title); search(name + " " + album.title, false); });
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(144), -2); params.rightMargin = dp(16); rail.addView(tile, params);
+        }
+        scroll.addView(rail); add(target, scroll, 16);
+        add(target, text("Informações do catálogo Deezer · disponíveis também na próxima visita offline.", 11, MUTED, false), 12);
+    }
+
     private View artistAvatar(String name, int size) {
         String[] words = name.trim().split("\\s+");
         String first = words.length == 0 || words[0].isEmpty() ? "♪" : words[0].substring(0, words[0].offsetByCodePoints(0, 1));
@@ -710,11 +777,14 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         TextView initials = text((first + last).toUpperCase(java.util.Locale.ROOT), size / 3, Color.WHITE, true);
         initials.setGravity(Gravity.CENTER);
         avatar.addView(initials, new FrameLayout.LayoutParams(-1, -1));
-        String thumbnail = null;
+        MobileArtistCatalog.Profile profile = artistProfiles.get(name);
+        if (!artistProfiles.containsKey(name)) { profile = MobileArtistCatalog.saved(getFilesDir(), name); artistProfiles.put(name, profile); }
+        String thumbnail = profile != null && !profile.picture.isEmpty() ? profile.picture : null;
         for (MobileLibrary.Track track : library.all()) {
             if (track.artist != null && name.equalsIgnoreCase(track.artist.trim())
                     && track.thumbnail != null && track.thumbnail.startsWith("https://")) {
                 if (thumbnail == null) thumbnail = track.thumbnail;
+                if (profile != null && !profile.picture.isEmpty()) break;
                 try {
                     if (artworkFile(track.thumbnail).isFile()) { thumbnail = track.thumbnail; break; }
                 } catch (Exception ignored) { }
@@ -1154,6 +1224,8 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         });
         add(body, radio, 28);
         add(body, text("Este celular · música salva para ouvir offline", 12, GREEN, false), 12);
+        expandedContext = column(); add(body, expandedContext, 28);
+        renderExpandedContext();
         scroll.addView(body);
         page.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         dialog.setContentView(page);
@@ -1170,6 +1242,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 expandedCover = null;
                 expandedTitle = null;
                 expandedArtist = null;
+                expandedContext = null;
                 seek = null;
                 elapsed = null;
                 remaining = null;
@@ -1180,6 +1253,37 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         if (window != null) window.setLayout(-1, -1);
         applyPlayerInsets(page, window);
         updatePlayer();
+    }
+
+    private void renderExpandedContext() {
+        if (expandedContext == null || playingTrack == null) return;
+        expandedContext.removeAllViews();
+        LinearLayout artistCard = column(); artistCard.setPadding(dp(20), dp(20), dp(20), dp(20)); artistCard.setBackground(rounded(CARD, 8));
+        add(artistCard, text("SOBRE O ARTISTA", 10, MUTED, true), 0);
+        LinearLayout heading = row(); heading.addView(artistAvatar(playingTrack.artist, 64), new LinearLayout.LayoutParams(dp(64), dp(64)));
+        TextView name = text(playingTrack.artist, 22, Color.WHITE, true); name.setPadding(dp(16), 0, 0, 0); heading.addView(name, new LinearLayout.LayoutParams(0, -2, 1)); add(artistCard, heading, 16);
+        List<MobileLibrary.Track> artistTracks = new ArrayList<>(); for (MobileLibrary.Track item : library.all()) if (item.artist.equalsIgnoreCase(playingTrack.artist)) artistTracks.add(item);
+        add(artistCard, text(artistTracks.size() + " músicas na sua coleção. Explore os destaques e as músicas deste artista.", 13, MUTED, false), 16);
+        Button profile = button("Abrir perfil do artista", false); profile.setOnClickListener(view -> { if (playingTrack != null) openArtist(playingTrack.artist); }); add(artistCard, profile, 16);
+        add(expandedContext, artistCard, 0);
+        add(expandedContext, text("A seguir", 22, Color.WHITE, true), 28);
+        if (radioPlayback) {
+            for (int i = radioIndex + 1; i < radioQueue.size() && i <= radioIndex + 3; i++) {
+                final MobileSource.Song song = radioQueue.get(i);
+                LinearLayout line = row(); line.addView(artwork(song.thumbnail, 44));
+                LinearLayout labels = column(); labels.setPadding(dp(12), dp(8), 0, dp(8));
+                add(labels, text(song.title, 13, Color.WHITE, true), 0); add(labels, text(song.artist, 11, MUTED, false), 6);
+                line.addView(labels, new LinearLayout.LayoutParams(0, -2, 1));
+                line.setOnClickListener(view -> { if (expandedPlayer != null) expandedPlayer.dismiss(); listenSong(song); }); add(expandedContext, line, 12);
+            }
+            if (radioIndex + 1 >= radioQueue.size()) add(expandedContext, text("A rádio está preparando a próxima música.", 13, MUTED, false), 12);
+            return;
+        }
+        List<MobileLibrary.Track> next = localQueue.isEmpty() ? library.all() : localQueue;
+        int index = -1; for (int i = 0; i < next.size(); i++) if (next.get(i).id.equals(playingTrack.id)) { index = i; break; }
+        int added = 0;
+        for (int i = index + 1; i < next.size() && added < 3; i++) { if (next.get(i).id.equals(playingTrack.id)) continue; add(expandedContext, savedRow(next.get(i)), 12); added++; }
+        if (added == 0) add(expandedContext, text(radioPlayback ? "A rádio está preparando a próxima música." : "Você chegou ao fim da fila. Inicie uma rádio para continuar descobrindo.", 13, MUTED, false), 12);
     }
 
     @SuppressWarnings("deprecation")
@@ -1215,6 +1319,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
         loadCover(playerCover, track.thumbnail);
         if (expandedTitle != null) expandedTitle.setText(track.title);
         if (expandedArtist != null) expandedArtist.setText(track.artist);
+        renderExpandedContext();
         if (expandedCover != null) {
             expandedCover.setImageResource(R.drawable.ic_acervo);
             loadCover(expandedCover, track.thumbnail);

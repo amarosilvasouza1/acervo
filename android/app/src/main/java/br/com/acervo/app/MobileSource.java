@@ -31,6 +31,8 @@ import java.util.Set;
 /** Device-side source adapter. No Acervo server, account or proxy is involved. */
 public final class MobileSource {
     private static boolean initialized;
+    private static final java.util.LinkedHashMap<String, Song> resolved = new java.util.LinkedHashMap<>(8, 0.75f, true);
+    private static final java.util.Map<String, Long> resolvedAt = new java.util.HashMap<>();
 
     public static final class Song {
         public final String id, title, artist, thumbnail, url, extension, mime;
@@ -74,6 +76,11 @@ public final class MobileSource {
     public static Song resolve(String videoId) throws Exception {
         initialize();
         if (videoId == null || !videoId.matches("[A-Za-z0-9_-]{11}")) throw new IOException("Identificador da música inválido.");
+        synchronized (resolved) {
+            Long at = resolvedAt.get(videoId);
+            Song cached = resolved.get(videoId);
+            if (cached != null && at != null && android.os.SystemClock.elapsedRealtime() - at < 90000) return cached;
+        }
         StreamInfo info = StreamInfo.getInfo(ServiceList.YouTube, "https://www.youtube.com/watch?v=" + videoId);
         AudioStream selected = null;
         for (AudioStream stream : info.getAudioStreams()) {
@@ -86,9 +93,14 @@ public final class MobileSource {
         }
         if (selected == null) throw new IOException("Esta música não oferece áudio para baixar no celular. Tente outro resultado.");
         boolean m4a = selected.getFormat() == MediaFormat.M4A;
-        return new Song(videoId, info.getName(), info.getUploaderName(),
+        Song result = new Song(videoId, info.getName(), info.getUploaderName(),
                 info.getThumbnails().isEmpty() ? "" : info.getThumbnails().get(0).getUrl(),
                 selected.getContent(), info.getDuration(), m4a ? "m4a" : "webm", m4a ? "audio/mp4" : "audio/webm");
+        synchronized (resolved) {
+            if (resolved.size() >= 8) { String oldest = resolved.keySet().iterator().next(); resolved.remove(oldest); resolvedAt.remove(oldest); }
+            resolved.put(videoId, result); resolvedAt.put(videoId, android.os.SystemClock.elapsedRealtime());
+        }
+        return result;
     }
 
     public static List<Song> related(String videoId) throws Exception {

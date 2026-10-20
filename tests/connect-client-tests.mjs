@@ -108,6 +108,26 @@ function browser({ deviceId = 'pc', mobile = false, hash = '', stored = {}, back
 }
 
 function response(data, status = 200) { return { ok: status >= 200 && status < 300, status, json: async () => plain(data) }; }
+
+test('expanded player shows the actual next track, escapes artist details and ignores late profile responses', async () => {
+  const h = browser();
+  h.AC.state.current = plain(tracks[0]); h.AC.state.queue = ['one', 'two']; h.AC.state.qi = 0;
+  const waiting = deferred();
+  h.AC.artistSummary = () => waiting.promise;
+  h.AC.openExpandedPlayer();
+  assert.match(h.getNode('modal-root').innerHTML, /Sobre o artista/);
+  assert.match(h.getNode('modal-root').innerHTML, /A seguir/);
+  assert.match(h.getNode('expanded-next').innerHTML, /data-id="two"/);
+  assert.equal(h.getNode('expanded-radio').getAttribute('data-id'), 'one');
+  waiting.resolve({ name: '<Artista>', biography: '<script>bad</script>', picture: 'javascript:alert(1)' });
+  await flush();
+  assert.match(h.getNode('expanded-artist-card').innerHTML, /&lt;Artista&gt;/);
+  assert.doesNotMatch(h.getNode('expanded-artist-card').innerHTML, /src="javascript|<script>/);
+  const previous = h.getNode('expanded-artist-card').innerHTML;
+  h.AC.state.current = { ...tracks[1], artist: 'New artist' };
+  h.AC.closeModals(); h.AC.paintExpandedPlayer();
+  assert.equal(h.getNode('expanded-artist-card').innerHTML, previous);
+});
 const playback = overrides => ({ activeDeviceId: 'pc', trackId: 'one', queue: ['one', 'two'], qi: 0, playing: false, position: 37, volume: .85, shuffle: false, repeat: 'off', updatedAt: '2026-10-18T18:00:00Z', revision: 1, ...overrides });
 const device = (id, local = id === 'pc') => ({ id, name: id === 'pc' ? 'Meu computador' : 'Meu celular', kind: local ? 'desktop' : 'mobile', local, online: true, lastSeenAt: '2026-10-18T18:00:00Z' });
 const snapshot = (id = 'pc', state = {}) => ({ local: id === 'pc', deviceId: id, devices: [device('pc'), device('phone', false)], playback: playback(state) });

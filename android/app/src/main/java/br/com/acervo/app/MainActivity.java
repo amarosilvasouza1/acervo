@@ -349,7 +349,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.5.4 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.5.8 Mobile");
         webView.addJavascriptInterface(new Bridge(), "AcervoAndroid");
         secureClient = new SecureWebClient(webView, this, selectedOrigin);
         final SecureWebClient transport = secureClient;

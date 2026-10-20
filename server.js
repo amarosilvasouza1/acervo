@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 
-import { searchYouTube, videoInfo, downloadAudio, parseVideoId, playlistInfo } from './lib/yt.js';
+import { searchYouTube, downloadAudio, parseVideoId, playlistInfo, publicVideoMetadata } from './lib/yt.js';
 import { probe, measureLoudness, normalizeTo, extractFeatures, loudnessOf } from './lib/audio.js';
 import * as Library from './lib/library.js';
 import * as Playlists from './lib/playlists.js';
@@ -30,7 +30,7 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 18, versionName: '1.5.7' };
+const ANDROID_VERSION = { versionCode: 19, versionName: '1.5.8' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -84,13 +84,13 @@ const MIME = {
 const jobs = new Map();
 const jobWaiters = new Map();
 const queue = [];
-const DOWNLOAD_CONCURRENCY = Math.max(1, Math.min(3, Number(process.env.ACERVO_DOWNLOAD_CONCURRENCY) || 2));
+const DOWNLOAD_CONCURRENCY = Math.max(1, Math.min(3, Math.floor(Number(process.env.ACERVO_DOWNLOAD_CONCURRENCY) || 2)));
 let activeDownloads = 0;
 const activeByVideo = new Map();
 const searchCache = new Map();
 const discoverCache = new Map();
 const playlistImports = createPlaylistImports({ store: Playlists, youtubeInfo: playlistInfo, search: searchYouTube,
-  enqueue: enqueueImport, waitForJob: waitForJob, getJob: id => jobs.get(id), getTracks: Library.all });
+  enqueue: enqueueImport, waitForJob: waitForJob, getJob: id => jobs.get(id), getTracks: Library.all, concurrency: DOWNLOAD_CONCURRENCY });
 
 for (const dir of [DATA, TRACKS, COVERS, TMP, TRASH]) {
   await mkdir(dir, { recursive: true }).catch(function () {});
@@ -176,6 +176,11 @@ function waitForJob(job) {
 
 function enqueueImport(input, options = {}) {
   validateImportInput(input);
+  const knownId = input.videoId || parseVideoId(input.url || '');
+  if (knownId) {
+    const active = jobs.get(activeByVideo.get(knownId));
+    if (active && ['queued', 'working'].includes(active.status)) return active;
+  }
   const job = {
     id: crypto.randomUUID(),
     status: 'queued',
@@ -191,6 +196,7 @@ function enqueueImport(input, options = {}) {
     updatedAt: Date.now()
   };
   jobs.set(job.id, job);
+  if (knownId) { job.videoId = knownId; activeByVideo.set(knownId, job.id); }
   queue.push(job);
   pump();
   return job;
@@ -204,7 +210,7 @@ async function pump() {
       bumpJob(job, { status: 'error', stage: 'Falhou', error: String(err.message || err), message: 'Nao foi possivel concluir' });
     }).finally(() => {
       activeDownloads--;
-      if (job.videoId) activeByVideo.delete(job.videoId);
+      if (job.videoId && activeByVideo.get(job.videoId) === job.id) activeByVideo.delete(job.videoId);
       pump();
     });
   }
@@ -231,13 +237,35 @@ async function processImport(job) {
     return;
   }
   if (activeByVideo.has(videoId) && activeByVideo.get(videoId) !== job.id) {
-    throw new Error('Essa faixa ja esta sendo baixada.');
+    const shared = jobs.get(activeByVideo.get(videoId));
+    if (shared && ['queued', 'working'].includes(shared.status)) {
+      // A search can resolve to the same video as another already running job.
+      if (shared.status === 'queued') {
+        const index = queue.indexOf(shared); if (index >= 0) queue.splice(index, 1);
+        bumpJob(shared, { status: 'working', stage: 'Compartilhando download', message: 'A mesma música já está sendo preparada' });
+        job.catalogMetadata ||= shared.catalogMetadata;
+        meta = shared.input.meta || meta;
+        waitForJob(job).then(completed => bumpJob(shared, { status: completed.status, stage: completed.stage,
+          progress: completed.progress, trackId: completed.trackId, track: completed.track, error: completed.error, message: completed.message }));
+      } else {
+        const completed = await waitForJob(shared);
+        if (completed.status === 'error') throw new Error(completed.error);
+        bumpJob(job, { status: 'done', stage: 'No acervo', progress: 100, trackId: completed.trackId, track: completed.track, message: 'Faixa adicionada ao acervo' });
+        return;
+      }
+    }
   }
   activeByVideo.set(videoId, job.id);
 
-  bumpJob(job, { stage: 'Metadados', progress: 8, message: 'Lendo titulo, artista e capa' });
-  let info = null;
-  try { info = await videoInfo(videoId); } catch (e) { info = null; }
+  const workDir = path.join(TMP, videoId + '-' + Date.now());
+  await mkdir(workDir, { recursive: true });
+  bumpJob(job, { stage: 'Baixando', progress: 12, message: 'Baixando o áudio e seus metadados' });
+  const downloaded = await downloadAudio(videoId, workDir, function (pct) {
+    const p = Math.max(0, Math.min(100, pct));
+    bumpJob(job, { stage: 'Baixando', progress: Math.round(12 + p * 0.5), message: 'Baixando áudio: ' + Math.round(p) + '%' });
+  });
+  let info = downloaded.info;
+  if (!info && !meta?.title) try { info = await publicVideoMetadata(videoId); } catch {}
   const metadata = resolveTrackMetadata(info, meta);
   if (job.catalogMetadata) {
     metadata.title = job.catalogMetadata.title;
@@ -251,25 +279,15 @@ async function processImport(job) {
     ...(meta?.thumbnail ? [{ url: meta.thumbnail }] : [])
   ] });
 
-  const workDir = path.join(TMP, videoId + '-' + Date.now());
-  await mkdir(workDir, { recursive: true });
-  bumpJob(job, { stage: 'Baixando', progress: 12, message: 'Baixando o audio do YouTube' });
-  const downloaded = await downloadAudio(videoId, workDir, function (pct) {
-    const p = Math.max(0, Math.min(100, pct));
-    bumpJob(job, { stage: 'Baixando', progress: Math.round(12 + p * 0.5), message: 'Baixando audio: ' + Math.round(p) + '%' });
-  });
-
   bumpJob(job, { stage: 'Normalizando', progress: 65, message: 'Medindo e normalizando em -14 LUFS' });
-  const measured = await measureLoudness(downloaded);
+  const measured = await measureLoudness(downloaded.file);
   const outFile = path.join(TRACKS, videoId + '.mp3');
-  const finalLoudness = await normalizeTo(downloaded, outFile, measured, -14);
+  const finalLoudness = await normalizeTo(downloaded.file, outFile, measured, -14);
 
   bumpJob(job, { stage: 'Analisando', progress: 84, message: 'Extraindo andamento, energia e brilho' });
-  const features = await extractFeatures(outFile);
-  const probed = await probe(outFile);
+  const [features, probed, coverPath] = await Promise.all([extractFeatures(outFile), probe(outFile), fetchCover(videoId, thumb)]);
 
   bumpJob(job, { stage: 'Capa', progress: 93, message: 'Salvando capa' });
-  const coverPath = await fetchCover(videoId, thumb);
 
   const track = {
     id: videoId,

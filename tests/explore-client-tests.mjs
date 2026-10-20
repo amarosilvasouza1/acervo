@@ -192,6 +192,34 @@ test('valid release dates and catalog follower counts keep their actual meaning'
   assert.doesNotMatch(h.artist(), /ouvintes mensais/);
 });
 
+test('artist page exposes music, album and about sections with real listening totals and playable titles', async () => {
+  const h = setup(); h.AC.openArtist('Artista');
+  h.AC.state.tracks = [{ id: 'saved', title: 'Minha faixa', artist: 'Artista', plays: 7, duration: 180, hasCover: true }];
+  h.setApi(async () => ({ name: 'Artista', localTracks: h.AC.state.tracks, albums: [], topTracks: [] }));
+  await h.AC.mountArtist('Artista');
+  assert.match(h.artist(), /data-section="artist-popular-section"/);
+  assert.match(h.artist(), /id="artist-albums-section"/);
+  assert.match(h.artist(), /id="artist-about-section"/);
+  assert.match(h.artist(), /<strong>3<\/strong> min de música/);
+  assert.match(h.artist(), /<strong>7<\/strong> reproduções suas/);
+  assert.match(h.artist(), /discografia não está disponível/);
+  h.AC.playerActions['explore-play'](element({ 'data-explore-key': 'local:Artista:0' }));
+  assert.deepEqual(h.played, ['saved']);
+});
+
+test('player artist summaries use the catalog cache and discard an answer after authorization changes', async () => {
+  const h = setup(), waiting = deferred();
+  h.setApi(() => waiting.promise);
+  const promise = h.AC.artistSummary('Artista');
+  h.AC.state.authEpoch++;
+  waiting.resolve({ name: 'Old protected artist' });
+  assert.equal(await promise, null);
+  h.setApi(async () => ({ name: 'Current artist' }));
+  assert.equal((await h.AC.artistSummary('Artista')).name, 'Current artist');
+  assert.equal((await h.AC.artistSummary('Artista')).name, 'Current artist');
+  assert.equal(h.requests.length, 2);
+});
+
 test('repeat renders reuse a current cache and restore working item actions after mounting', async () => {
   const h = setup();
   h.AC.state.tracks = [{ id: 'same-id', title: 'Salva' }];

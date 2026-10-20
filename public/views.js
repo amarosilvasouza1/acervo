@@ -5,8 +5,10 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.5.4';
+  var NEWS_VERSION = '1.5.8';
   var NEWS = [
+    ['Artistas e player com mais conteúdo', 'Foto em destaque, músicas populares, discografia e sua coleção na página do artista. O player reúne capa grande, perfil do artista e próximas músicas.'],
+    ['Downloads com menos espera', 'O PC reutiliza metadados do download e preenche as duas vagas da playlist. No Android, fontes compatíveis usam dois leitores por partes, com validação antes de salvar.'],
     ['Conexões reaproveitadas', 'O APK reutiliza conexões seguras ao carregar capas e dados do PC. O encaminhamento também atende mais pedidos simultâneos para reduzir a espera ao abrir a página.'],
     ['Início direto no Android', 'O aplicativo lembra o último modo usado. Depois de conectar ao PC, abre direto no Início; o QR fica em Conexões.'],
     ['Offline com o mesmo estilo', 'As abas, os cartões de músicas, as listas e o player seguem os mesmos padrões do modo conectado. As capas disponíveis também ficam salvas no celular.'],
@@ -52,7 +54,7 @@
     var unseen = true;
     try { unseen = localStorage.getItem('acervo:newsSeen') !== NEWS_VERSION; } catch (e) {}
     if (!unseen) return '';
-    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades ' + NEWS_VERSION + '</span><strong>PC e celular com identidades verificadas</strong><p>Um único celular autorizado, convite por QR e códigos de proteção nos dois aparelhos.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
+    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades ' + NEWS_VERSION + '</span><strong>Mais música, menos espera</strong><p>Downloads otimizados, páginas de artistas mais completas e um novo contexto no player.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
   }
 
   function openNews() {

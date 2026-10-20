@@ -58,9 +58,16 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.7
+## Novidades 1.5.8
 
-- **Download mais rápido:** até duas músicas em paralelo, mantendo MP3 320 kbps, com fragmentos do YouTube baixados em paralelo pelo yt-dlp.
+- O PC recebe áudio e metadados na mesma extração do YouTube. A playlist preenche duas vagas de importação e pedidos repetidos da mesma faixa compartilham o trabalho.
+- No Android, arquivos a partir de 2 MB usam até dois leitores de partes de 1 MB quando a fonte aceita Range. Cada resposta, tamanho e identidade informada é conferida antes de guardar o áudio. Fontes sem suporte usam o download normal.
+- A página do artista destaca foto, músicas populares, discografia, informações confirmadas e sua coleção. O player expandido reúne capa, perfil e próximas músicas.
+- O modo independente do Android consulta e guarda metadados do catálogo quando encontra um perfil compatível. A biblioteca e os perfis já consultados continuam acessíveis offline.
+
+## Histórico 1.5.7
+
+- **Download mais rápido:** até duas músicas em paralelo, mantendo o processamento e a qualidade de áudio configurados, com fragmentos do YouTube baixados em paralelo pelo yt-dlp.
 - **Tela do artista mais completa:** capa de fundo, foto, contagem de músicas, botão Tocar tudo quando o artista está no acervo e atalhos para buscar e abrir a fonte.
 - **Player refinado:** fundo com a capa desfocada, capa maior, contexto do álbum, atalhos de Fila e Artista e controles mais legíveis. A estrutura continua a mesma, sem letras nem visualizador.
 
@@ -160,7 +167,7 @@ O endereço fica disponível apenas dentro da sua tailnet — não é publicado 
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.7.apk](releases/acervo-1.5.7.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
+Instale [releases/acervo-1.5.8.apk](releases/acervo-1.5.8.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
