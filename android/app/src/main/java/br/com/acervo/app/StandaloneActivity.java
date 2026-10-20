@@ -1058,7 +1058,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                         bounds.inJustDecodeBounds = true;
                         BitmapFactory.decodeFile(cachedFile.getAbsolutePath(), bounds);
                         BitmapFactory.Options options = coverOptions(bounds.outWidth, bounds.outHeight);
-                        Bitmap image = BitmapFactory.decodeFile(cachedFile.getAbsolutePath(), options);
+                        Bitmap image = ArtworkCrop.trim(BitmapFactory.decodeFile(cachedFile.getAbsolutePath(), options));
                         if (image != null) {
                             coverCache.put(url, image);
                             post(() -> { if (url.equals(target.getTag())) target.setImageBitmap(image); });
@@ -1075,7 +1075,7 @@ public final class StandaloneActivity extends Activity implements PlaybackServic
                 BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
                 if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return;
                 BitmapFactory.Options options = coverOptions(bounds.outWidth, bounds.outHeight);
-                Bitmap image = BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+                Bitmap image = ArtworkCrop.trim(BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options));
                 if (image == null) return;
                 coverCache.put(url, image);
                 try {

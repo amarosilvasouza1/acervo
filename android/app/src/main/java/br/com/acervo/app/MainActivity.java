@@ -349,7 +349,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         settings.setSupportMultipleWindows(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(false);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.5.8 Mobile");
+        settings.setUserAgentString(settings.getUserAgentString() + " AcervoAndroid/1.5.9 Mobile");
         webView.addJavascriptInterface(new Bridge(), "AcervoAndroid");
         secureClient = new SecureWebClient(webView, this, selectedOrigin);
         final SecureWebClient transport = secureClient;
@@ -609,7 +609,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
             if (cookie != null && !cookie.isEmpty()) connection.setRequestProperty("Cookie", cookie);
             if (connection.getResponseCode() != 200) return null;
             try (InputStream input = connection.getInputStream()) {
-                return BitmapFactory.decodeStream(input);
+                return ArtworkCrop.trim(BitmapFactory.decodeStream(input));
             } finally {
                 connection.disconnect();
             }

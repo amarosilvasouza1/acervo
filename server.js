@@ -22,15 +22,17 @@ import { createInternetRelay } from './lib/internet-relay.js';
 import { createBoreRelay } from './lib/bore-relay.js';
 import { acquireServerInstance } from './lib/server-instance.js';
 import { createPlaylistImports } from './lib/playlist-imports.js';
+import { createCoverDisplay } from './lib/cover-crop.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
 const DATA = Library.DATA_DIR;
 const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
+const coverDisplay = createCoverDisplay({ covers: COVERS, cache: path.join(DATA, 'cover-display') });
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 19, versionName: '1.5.8' };
+const ANDROID_VERSION = { versionCode: 20, versionName: '1.5.9' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
@@ -675,8 +677,8 @@ async function handleRequest(req, res) {
     }
     if (req.method === 'GET' && pathname.startsWith('/api/cover/')) {
       const id = fileId(pathname, '/api/cover/');
-      const file = path.join(COVERS, id + '.jpg');
-      return await sendFile(req, res, COVERS, file, 'image/jpeg');
+      const display = await coverDisplay(id);
+      return await sendFile(req, res, display.root, display.file, 'image/jpeg');
     }
     if (req.method === 'GET' && pathname.startsWith('/api/recommend/')) {
       const id = pathname.split('/')[3];

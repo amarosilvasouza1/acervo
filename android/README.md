@@ -12,7 +12,7 @@ A sincronizacao de bibliotecas e manual: depois de parear e conectar ao outro Ac
 
 A versão 1.5.8 reaproveita conexões HTTPS e o contexto TLS do PC para reduzir a espera por capas e consultas, preservando a autenticação dos dois aparelhos. Ela abre direto no Início e padroniza os modos conectado, independente e offline: Início, Buscar, Biblioteca e Rádio na mesma navegação inferior, cartões e atalhos de músicas, listas, mini player e player expandido. Os perfis e as recomendações offline usam as faixas e o histórico locais; as capas disponíveis são guardadas em disco privado. A conexão ao PC exige as identidades dos dois aparelhos e permite um único celular autorizado.
 
-1. Copie `releases/acervo-1.5.8.apk` para o celular e abra o arquivo. Instale por cima da versão anterior para preservar suas músicas. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
+1. Copie `releases/acervo-1.5.9.apk` para o celular e abra o arquivo. Instale por cima da versão anterior para preservar suas músicas. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
 2. Abra o aplicativo: a instalação nova entra direto no Início do celular; uma conexão anterior ao PC é reaberta automaticamente.
 3. Em **Buscar**, procure uma musica e toque em **Baixar** ou **Baixar e ouvir**. Ela fica salva na biblioteca do celular.
 4. Para controlar outro Acervo, abra **Conexões** pelo ícone de dispositivos e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor. Ao conectar, o app entra no Início e salva apenas a origem confirmada, sem guardar o convite temporário.
@@ -56,7 +56,7 @@ O script usa a chave original em `android/signing/acervo-release.jks` e sua senh
 
 Guarde um backup privado dos dois arquivos juntos. Eles permitem assinar futuras atualizacoes compativeis com a instalacao existente. A pasta `signing/` esta excluida pelo `.gitignore`: nao envie a chave ou a senha junto com o APK. Se a chave existir e a senha estiver ausente, a compilacao para em vez de substituir a assinatura.
 
-Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.5.8.apk` com o Android Build Tools no PATH.
+Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.5.9.apk` com o Android Build Tools no PATH.
 
 ## Atualizar pelo aplicativo
 
@@ -68,8 +68,10 @@ Depois de informar e configurar o repositório de atualizações, será possíve
 
 ## Licenças e fontes
 
-O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.5.8-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
+O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.5.9-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
 
 É possível compilar um APK próprio com Gradle e assiná-lo com uma chave própria sem ter acesso à chave original. Essa chave própria não permite atualizar por cima de uma instalação assinada pela chave original. Para empacotar os fontes da distribuição, use `python android/package-source.py --dependency-sources CAMINHO_DOS_FONTES_DAS_DEPENDENCIAS`.
 
 Na versão 1.5.8, downloads maiores podem usar duas conexões por partes quando a fonte aceita Range; sem suporte, o app usa uma conexão normal. O player ganhou contexto do artista e próximas músicas. Perfis compatíveis do catálogo público incluem populares e álbuns e ficam guardados no celular. Execute `tests/run-download-tests.ps1 -JavaHome <JDK21>` para verificar bytes, limites, concorrência, respostas parciais e fallback com um servidor local.
+
+Na versão 1.5.9, as faixas pretas horizontais uniformes são detectadas e recortadas só na exibição. A verificação também é aplicada às capas já guardadas no celular, sem mudar o arquivo original. Casos escuros ou incertos não são recortados.
