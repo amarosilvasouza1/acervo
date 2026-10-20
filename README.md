@@ -6,10 +6,6 @@ Repositório: https://github.com/amarosilvasouza1/acervo
 
 ## Capturas
 
-![Recomendadas, lançamentos e recentes](docs/explore-spotify.png)
-
-![Página do artista](docs/artist-page.png)
-
 ![Acervo no PC](docs/desktop.jpg)
 
 ![Acervo Web responsivo](docs/web-spotify.png)
@@ -17,6 +13,8 @@ Repositório: https://github.com/amarosilvasouza1/acervo
 <img src="docs/mobile.png" alt="Acervo no celular" width="320">
 
 ![Playlists do Acervo](docs/playlists.jpg)
+
+![Rádio por similaridade](docs/radio.jpg)
 
 Interface construída a partir do sistema visual descrito em **spotify-design.md**: fundo #000, superfícies #121212/#181818, tinta #fff, apoio #b3b3b3, acento #1ed760, texto sobre acento #111, pills de 1000px, foco visível e suporte a movimento reduzido.
 
@@ -109,8 +107,6 @@ Para corrigir faixas antigas salvas como **Faixa sem título** ou **Artista desc
 - Capas carregadas ficam no cache privado do celular para uso offline.
 - QR local com identidade do computador: HTTPS para biblioteca, controles, rádio, sincronização e áudio, com recusa de uma chave diferente da pareada.
 - Compare o código em **Proteção** no APK com o código no PC. Atualize os dois lados e escaneie um novo QR para substituir conexões locais antigas por HTTP.
-
-![Proteção da conexão](docs/connect-security.png)
 
 A comunicação usa TLS autenticado pelo QR, sem implementar o protocolo de mensagens do WhatsApp. Veja [como a proteção funciona](docs/security.md).
 
