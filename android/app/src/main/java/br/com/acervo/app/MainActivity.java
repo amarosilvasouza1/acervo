@@ -198,7 +198,7 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         steps.addView(text("Conecte em poucos segundos", 16, Color.WHITE, true));
         add(steps, text("1  Abra seu Acervo no navegador.\n2  Entre em Conectar dispositivos.\n3  Gere o QR code e escaneie aqui.", 14, MUTED, false), 12);
         add(body, steps, 28);
-        TextView note = text("O QR code confirma a identidade do computador e cria uma conexão criptografada. Atualize o Acervo no PC e gere um novo QR para substituir conexões antigas por HTTP. O PC precisa estar acessível para sincronizar; as músicas salvas neste celular continuam independentes.", 12, MUTED, false);
+        TextView note = text("O QR code confirma a identidade do computador e o celular cria sua própria chave privada no Android Keystore. O pareamento autoriza apenas este telefone no Acervo do PC. Para sincronizar em outra rede, o PC precisa estar ligado e ter um endereço acessível pela internet. As músicas salvas neste celular continuam independentes.", 12, MUTED, false);
         note.setLineSpacing(dp(3), 1);
         add(body, note, 20);
         body.setFocusableInTouchMode(true);
@@ -231,23 +231,40 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         add(body, text(origin, 12, MUTED, false), 4);
         String description = pin == null || pin.isEmpty()
                 ? "Esta conexão HTTPS verifica o certificado do servidor pelo sistema Android."
-                : "A identidade deste computador foi recebida pelo QR code. Confira o mesmo código em Conectar dispositivos no PC. Uma chave diferente será bloqueada.";
+                : "O QR confirmou a chave do computador. Este celular possui outra chave privada, protegida no Android Keystore. Após o pareamento, o Acervo do PC exige a identidade deste telefone para liberar o acesso. Confira os dois códigos em Conectar dispositivos no PC.";
         add(body, text(description, 14, Color.WHITE, false), 14);
         if (pin != null && !pin.isEmpty()) {
+            add(body, text("COMPUTADOR · SHA-256 DA CHAVE PÚBLICA", 10, MUTED, true), 18);
             TextView code = text(pin.toUpperCase(java.util.Locale.ROOT).replaceAll("(.{8})(?!$)", "$1 "), 14, GREEN, false);
             code.setTypeface(Typeface.MONOSPACE);
             code.setTextIsSelectable(true);
-            add(body, code, 18);
+            add(body, code, 8);
+            add(body, text("ESTE TELEFONE · SHA-256 DA CHAVE PÚBLICA", 10, MUTED, true), 18);
+            try {
+                String phonePin = PhoneIdentity.getFingerprint(this, origin);
+                if (phonePin == null) add(body, text("Identidade do telefone ausente. Atualize o PC, remova esta conexão e escaneie um novo QR code.", 13, MUTED, false), 8);
+                else {
+                    TextView phone = text(phonePin.toUpperCase(java.util.Locale.ROOT).replaceAll("(.{8})(?!$)", "$1 "), 14, GREEN, false);
+                    phone.setTypeface(Typeface.MONOSPACE);
+                    phone.setTextIsSelectable(true);
+                    add(body, phone, 8);
+                }
+            } catch (IOException failure) {
+                add(body, text("A identidade do telefone não está disponível. Remova esta conexão e faça um novo pareamento.", 13, MUTED, false), 8);
+            }
         }
         add(body, text("A proteção usa TLS entre este celular e o Acervo conectado. Não é o protocolo de mensagens do WhatsApp. As músicas offline continuam na área privada deste aplicativo.", 12, MUTED, false), 18);
-        new AlertDialog.Builder(this).setTitle("Proteção da conexão").setView(body)
+        ScrollView details = new ScrollView(this);
+        details.addView(body);
+        new AlertDialog.Builder(this).setTitle("Proteção da conexão").setView(details)
                 .setPositiveButton("Conferido", null)
                 .setNeutralButton("Desparear", (dialog, which) -> new AlertDialog.Builder(this)
                         .setTitle("Remover esta conexão?")
-                        .setMessage("O endereço, a identidade salva e o acesso neste celular serão removidos. Suas músicas offline continuam salvas. Para revogar o acesso também no PC, remova este celular em Dispositivos.")
+                        .setMessage("O endereço e o vínculo de identidade serão removidos. A chave privada é apagada quando nenhum outro endereço deste mesmo PC a utiliza. Suas músicas offline continuam salvas. Para revogar o acesso também no PC, remova este celular em Dispositivos.")
                         .setNegativeButton("Cancelar", null)
                         .setPositiveButton("Desparear", (confirm, ignored) -> {
-                            SecureTransport.forget(this, origin);
+                            try { SecureTransport.forget(this, origin); }
+                            catch (IOException failure) { toast("Não foi possível remover a identidade com segurança. Tente novamente."); return; }
                             CookieManager.getInstance().setCookie(origin + "/", "acervo_connect=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict");
                             CookieManager.getInstance().flush();
                             preferences.edit().remove("server_origin").apply();

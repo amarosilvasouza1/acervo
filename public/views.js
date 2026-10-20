@@ -5,8 +5,11 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.4.0';
+  var NEWS_VERSION = '1.5.0';
   var NEWS = [
+    ['Músicas completas e identificadas', 'Corrigido o corte de áudio perto de 44 segundos no APK conectado ao PC. Título e artista da busca são preservados no download e na sincronização.'],
+    ['Somente seu celular', 'O PC e o celular verificam a identidade um do outro. Apenas um telefone fica autorizado; remover esse aparelho no PC encerra o acesso.'],
+    ['Chaves ficam nos aparelhos', 'O QR leva um convite de uso único e a identidade pública do PC. A chave privada do telefone fica protegida pelo Android. Compare os dois códigos em Proteção.'],
     ['APK com o mesmo visual', 'Início, busca, biblioteca e rádio em abas inferiores, mini player e player expandido. As músicas e capas salvas continuam disponíveis offline.'],
     ['Conexão criptografada', 'O QR code do PC agora leva a identidade do computador. O APK verifica essa chave para proteger biblioteca, controles, rádio e áudio durante a conexão.'],
     ['Confira a identidade', 'Abra Proteção no APK e compare o código com o QR no PC. Conexões locais antigas por HTTP precisam de um novo pareamento seguro.'],
@@ -44,7 +47,7 @@
     var unseen = true;
     try { unseen = localStorage.getItem('acervo:newsSeen') !== NEWS_VERSION; } catch (e) {}
     if (!unseen) return '';
-    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades ' + NEWS_VERSION + '</span><strong>Notificação com capa, configurações e playlists</strong><p>Player repaginado, opções de download/offline e importação de playlist do YouTube em um link.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
+    return '<section class="news-banner"><div class="news-copy"><span class="pill pill-accent">Novidades ' + NEWS_VERSION + '</span><strong>PC e celular com identidades verificadas</strong><p>Um único celular autorizado, convite por QR e códigos de proteção nos dois aparelhos.</p></div><button class="btn btn-light btn-sm" data-action="whats-new">Ver novidades</button><button class="icon-btn" data-action="dismiss-news" aria-label="Dispensar novidades">' + icon('close', 16) + '</button></section>';
   }
 
   function openNews() {

@@ -217,10 +217,35 @@ test('a new search result can be saved and played after its completed import ref
   const h = browser({ backend: call => call.url.startsWith('/api/search?') ? { results: [result] } : call.url === '/api/import' ? { jobId: 'job-new' } : call.url === '/api/jobs/job-new' ? { id: 'job-new', status: 'done', videoId: result.videoId, trackId: imported.id } : call.url === '/api/library' ? { tracks: [...tracks, imported], stats: { tracks: 3 } } : undefined });
   h.click(h.action('search-chip', { 'data-q': 'New music' })); await flush();
   h.click(h.control('download')); await flush();
-  assert.deepEqual(h.calls.find(call => call.url === '/api/import').body, { videoId: result.videoId });
+  assert.deepEqual(h.calls.find(call => call.url === '/api/import').body, { videoId: result.videoId, meta: { title: result.title, channel: result.channel, duration: result.duration, thumbnail: result.thumbnail } });
   assert.ok(h.AC.trackById(imported.id)); assert.equal(h.AC.state.jobs[result.videoId].status, 'done');
   h.click(h.control('play-track', h.AC.jobMarkup(result.videoId))); await flush();
   assert.equal(h.AC.state.current.id, imported.id); assert.equal(h.audio.paused, false);
+  assert.equal(h.getNode('player-artist').textContent, result.channel);
+});
+
+test('download buttons retain radio and discovery metadata without using the seed as artist', async () => {
+  const h = browser({ backend: call => call.url === '/api/import' ? { jobId: 'metadata-job' } : undefined });
+  h.AC.pollJob = () => {};
+  h.AC.radioState = { results: [{ videoId: 'radio-video', title: 'Real radio title', channel: 'Actual uploader', sourceArtist: 'Different seed artist', because: 'Similar to a seed', duration: 234 }] };
+  h.AC.state.discover = [{ videoId: 'discover-video', title: 'Discovery title', channel: 'Discovery uploader', thumbnail: 'https://i.ytimg.com/vi/fixture/hqdefault.jpg' }];
+  h.click(h.action('download', { 'data-video-id': 'radio-video' })); await flush();
+  h.click(h.action('download', { 'data-video-id': 'discover-video' })); await flush();
+  const imports = h.calls.filter(call => call.url === '/api/import').map(call => call.body);
+  assert.deepEqual(imports[0], { videoId: 'radio-video', meta: { title: 'Real radio title', channel: 'Actual uploader', duration: 234 } });
+  assert.deepEqual(imports[1], { videoId: 'discover-video', meta: { title: 'Discovery title', channel: 'Discovery uploader', thumbnail: 'https://i.ytimg.com/vi/fixture/hqdefault.jpg' } });
+});
+
+test('explicit import metadata wins and unknown IDs never borrow another result identity', async () => {
+  const h = browser({ backend: call => call.url === '/api/import' ? { jobId: 'metadata-job' } : undefined });
+  h.AC.pollJob = () => {};
+  h.AC.state.search.results = [{ videoId: 'selected-video', title: 'Search title', channel: 'Search uploader' }];
+  await h.AC.startImport({ videoId: 'selected-video', meta: { title: 'Explicit title', artist: 'Confirmed artist' } });
+  await h.AC.startImport({ videoId: 'other-video' });
+  const imports = h.calls.filter(call => call.url === '/api/import').map(call => call.body);
+  assert.deepEqual(imports[0], { videoId: 'selected-video', meta: { title: 'Explicit title', channel: 'Search uploader', artist: 'Confirmed artist' } });
+  assert.deepEqual(imports[1], { videoId: 'other-video' });
+  assert.equal(h.AC.state.search.results[0].title, 'Search title');
 });
 
 test('the latest search remains visible when an older request finishes after it', async () => {

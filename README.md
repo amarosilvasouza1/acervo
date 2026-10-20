@@ -58,7 +58,21 @@ Clique no nome de um artista nas músicas, na busca ou no player para abrir seu 
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.4.0
+## Novidades 1.5.0
+
+- Corrigido o envio parcial de áudio que podia interromper o APK conectado perto de 44 segundos. Pedidos `Range: bytes=0-` agora recebem a faixa até o fim.
+- Downloads e sincronização preservam título e artista da seleção. A consulta oficial oEmbed do YouTube oferece uma alternativa quando a extração de metadados falha.
+- No modo PC local, autenticação mútua por certificado: somente um celular fica vinculado. Uma sessão copiada não substitui sua chave privada.
+- O QR leva a identidade pública do PC e um convite temporário de uso único. As chaves privadas ficam em cada aparelho; a do telefone usa o Android Keystore.
+- O vínculo sobrevive ao reinício do servidor. Remover o celular pelo PC revoga o acesso; outro aparelho precisa de um novo QR.
+- O painel administrativo HTTP fica no próprio PC por padrão. Rotas de arquivos recusam caminhos externos, links e junções.
+- Para hospedar no próprio PC fora de casa, `ACERVO_PUBLIC_ENDPOINT` aceita seu endereço HTTPS público. Ele exige uma rota de rede até a porta HTTPS do PC e não contorna CGNAT.
+
+O processo Node normal no Windows mantém as permissões da sua conta. Para isolamento de arquivos e processos, existe um perfil opcional de contêiner Linux; veja [docs/isolation.md](docs/isolation.md). Nenhum contêiner ou acesso público foi ativado automaticamente.
+
+Para corrigir faixas antigas salvas como **Faixa sem título** ou **Artista desconhecido**, pare o servidor e execute `npm run repair:metadata`, depois inicie-o novamente. O reparo consulta somente o ID original do YouTube, preenche rótulos ausentes e cria um backup em `data/`; áudio, nomes já confirmados e histórico são preservados. Faixas indisponíveis continuam com seus dados anteriores.
+
+## Histórico 1.4.0
 
 - APK com navegação inferior, início com recentes/artistas, biblioteca em linhas, mini player e player expandido nos modos independente e offline.
 - Capas carregadas ficam no cache privado do celular para uso offline.
@@ -98,11 +112,11 @@ O Acervo pode continuar no seu PC e ser acessado de qualquer rede pelo celular, 
 4. No celular, com o Tailscale ligado, abra o endereço no APK (ou escaneie o QR). Funciona fora de casa enquanto o PC estiver ligado e o servidor aberto.
 5. Para encerrar o acesso externo, feche a janela do servidor e rode **parar-externo.cmd**.
 
-O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.4.0 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
+O endereço fica disponível apenas dentro da sua tailnet — não é publicado na internet. O APK 1.5.0 já aceita links HTTPS; no modo local, PC e celular usam TLS autenticado pelo QR e identidade própria do telefone. O modo local (**iniciar.cmd**) continua sendo o mais simples para usar em casa. O acesso pela tailnet é autenticado pela identidade do Tailscale, não por senha. A senha em **externo.env** é apenas um fallback técnico para acesso sem a identidade da tailnet e não é solicitada no uso normal; mantenha esse arquivo privado.
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.4.0.apk](releases/acervo-1.4.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
+Instale [releases/acervo-1.5.0.apk](releases/acervo-1.5.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK lembra o último servidor conectado e abre direto nele; use **Conexão** para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 
@@ -119,11 +133,11 @@ Para conectar as duas versões:
 
 O celular continua independente depois da sincronização. Controlar um computador desligado e trocar dados com ele enquanto está inacessível exige aguardar sua volta. Uma biblioteca central hospedada é uma opção adicional, documentada em [docs/cloud.md](docs/cloud.md); nenhum servidor foi contratado ou publicado.
 
-Cada QR vale cinco minutos e conecta um aparelho. No modo local, use o leitor do APK para receber a identidade do PC. A porta HTTPS é a HTTP + 1 (4311 por padrão), ajustável por `ACERVO_HTTPS_PORT`. Guarde `data/identity` no backup privado do servidor. O modo local exige novo QR após reiniciar, preservando a identidade do PC; o modo nuvem preserva sessões em armazenamento permanente.
+Cada QR vale cinco minutos e é usado uma única vez. No modo local, use o leitor do APK para confirmar a identidade do PC e apresentar a identidade do telefone. Apenas um celular fica autorizado; remova-o no PC antes de vincular outro. A porta HTTPS é a HTTP + 1 (4311 por padrão), ajustável por `ACERVO_HTTPS_PORT`. Guarde `data/identity` e `data/paired-phone.json` no backup privado do servidor. O vínculo permanece após reiniciar; apagar ou reinstalar o APK perde a chave privada do telefone e exige revogar o vínculo antigo no PC.
 
 O botão **Atualizar aplicativo** consulta novas versões no servidor lembrado. O canal de atualizações pelo GitHub ainda não está configurado; o repositório será informado depois. Sem servidor lembrado, o aplicativo explica que o canal precisa ser configurado. A atualização valida o pacote e a mesma assinatura antes de abrir o instalador do Android. A primeira instalação ainda usa o APK entregue aqui. Veja [android/README.md](android/README.md) para compilação, assinatura e publicação.
 
-No modo local, o servidor aceita redes privadas e exige pareamento em outro aparelho. Se o Windows solicitar acesso de rede para o Node.js, permita a sua rede privada. O aplicativo não abre portas no roteador nem altera o firewall.
+No modo local, o painel HTTP escuta apenas em `127.0.0.1`; o celular usa a porta HTTPS e sua chave privada. Se o Windows solicitar acesso de rede para o Node.js, permita a rede em que pretende usar o app. O aplicativo não abre portas no roteador nem altera o firewall. Um endereço em `ACERVO_PUBLIC_ENDPOINT`, como `https://acervo.seu-dominio.com`, habilita QR e validação desse endereço, mas requer DNS e encaminhamento TCP até o PC; a conexão TLS deve terminar no Acervo. Veja [docs/isolation.md](docs/isolation.md).
 
 Para voltar a restringir o servidor ao próprio computador:
 

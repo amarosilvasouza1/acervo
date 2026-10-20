@@ -10,12 +10,14 @@ public final class PairingLink {
     public final String url;
     public final String spkiPin;
     public final String pairToken;
+    public final boolean requireClientIdentity;
 
-    private PairingLink(String origin, String url, String token, String pin) {
+    private PairingLink(String origin, String url, String token, String pin, boolean mutual) {
         this.origin = origin;
         this.url = url;
         this.pairToken = token;
         this.spkiPin = pin;
+        this.requireClientIdentity = mutual;
     }
 
     public static PairingLink parse(String text) {
@@ -33,19 +35,22 @@ public final class PairingLink {
             if (path != null && !path.isEmpty() && !"/".equals(path)) throw invalid();
             String fragment = uri.getRawFragment();
             String token = null, pin = null;
+            boolean mutual = false;
             if (fragment != null) {
                 String[] fields = fragment.split("&", -1);
-                if (fields.length > 2) throw invalid();
+                if (fields.length > 3) throw invalid();
                 for (String field : fields) {
                     if (field.matches("pair=[A-Za-z0-9_-]{16,256}") && token == null) token = field.substring(5);
                     else if (field.matches("spki=[a-fA-F0-9]{64}") && pin == null) pin = field.substring(5).toLowerCase(Locale.US);
+                    else if ("mutual=1".equals(field) && !mutual) mutual = true;
                     else throw invalid();
                 }
                 if (token == null) throw invalid();
-                if (pin != null && (!origin.startsWith("https://") || !isPrivateIPv4(uri.getHost()))) throw invalid();
+                if (pin != null && !origin.startsWith("https://")) throw invalid();
+                if (mutual && (pin == null || !origin.startsWith("https://"))) throw invalid();
             }
-            String normalized = token == null ? "" : "#pair=" + token + (pin == null ? "" : "&spki=" + pin);
-            return new PairingLink(origin, origin + "/" + normalized, token, pin);
+            String normalized = token == null ? "" : "#pair=" + token + (pin == null ? "" : "&spki=" + pin) + (mutual ? "&mutual=1" : "");
+            return new PairingLink(origin, origin + "/" + normalized, token, pin, mutual);
         } catch (URISyntaxException ex) {
             throw invalid();
         }

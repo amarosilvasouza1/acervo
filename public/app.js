@@ -728,6 +728,22 @@
   };
 
   AC.startImport = async function (payload) {
+    // Preserve the exact result the user selected when a later metadata lookup fails.
+    // Radio sourceArtist/because describe the seed, so they must not become the song artist.
+    if (payload.videoId) {
+      var knownResults = (state.search.results || []).concat(
+        AC.radioState && AC.radioState.results || [],
+        Array.isArray(state.discover) ? state.discover : []
+      );
+      var selected = knownResults.find(function (item) { return item.videoId === payload.videoId; });
+      if (selected) {
+        var metadata = {};
+        ['title', 'artist', 'channel', 'duration', 'thumbnail'].forEach(function (key) {
+          if (selected[key] !== undefined) metadata[key] = selected[key];
+        });
+        payload = Object.assign({}, payload, { meta: Object.assign(metadata, payload.meta || {}) });
+      }
+    }
     var key = payload.videoId || payload.url || payload.query;
     try {
       var res = await AC.api('/api/import', { method: 'POST', body: JSON.stringify(payload) });

@@ -1,0 +1,44 @@
+# Linux Docker Engine only. Do not merge with the cloud compose.yaml.
+# Host networking preserves the real loopback address for the PC-only owner UI.
+name: acervo-local-isolated
+
+services:
+  acervo:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: acervo:local-isolated
+    restart: unless-stopped
+    init: true
+    user: node:node
+    network_mode: host
+    environment:
+      ACERVO_MODE: local
+      ACERVO_DATA_DIR: /app/data
+      ACERVO_HTTP_HOST: 127.0.0.1
+      ACERVO_HTTPS_HOST: 0.0.0.0
+      PORT: "4310"
+      ACERVO_HTTPS_PORT: "4311"
+      ACERVO_PUBLIC_ENDPOINT: ${ACERVO_PUBLIC_ENDPOINT:-}
+      ACERVO_TRUST_TAILSCALE: "0"
+    volumes:
+      - acervo_local_data:/app/data
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,noexec,mode=1777,size=256m
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2.0
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  acervo_local_data:

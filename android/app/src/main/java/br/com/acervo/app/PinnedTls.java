@@ -10,6 +10,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
@@ -37,6 +38,11 @@ public final class PinnedTls {
     }
 
     public static void configure(HttpsURLConnection connection, String host, String pin) throws GeneralSecurityException {
+        configure(connection, host, pin, null);
+    }
+
+    /** The client identity proves possession of the paired phone's private key during TLS. */
+    public static void configure(HttpsURLConnection connection, String host, String pin, KeyManager[] clientIdentity) throws GeneralSecurityException {
         if (!validPin(pin) || host == null || !host.equalsIgnoreCase(connection.getURL().getHost())) throw new GeneralSecurityException("Identidade TLS inválida.");
         X509TrustManager trust = new X509TrustManager() {
             public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
@@ -49,7 +55,7 @@ public final class PinnedTls {
             }
         };
         SSLContext context = SSLContext.getInstance("TLS");
-        context.init(null, new TrustManager[] { trust }, null);
+        context.init(clientIdentity, new TrustManager[] { trust }, null);
         connection.setSSLSocketFactory(new ModernSocketFactory(context.getSocketFactory()));
         connection.setHostnameVerifier((requested, session) -> {
             if (!host.equalsIgnoreCase(requested)) return false;

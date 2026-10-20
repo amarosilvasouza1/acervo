@@ -10,18 +10,18 @@ A sincronizacao de bibliotecas e manual: depois de parear e conectar ao outro Ac
 
 ## Instalar
 
-A versão 1.4.0 compartilha o estilo da versão Web nos modos independente e offline: Início, Buscar, Biblioteca e Rádio na navegação inferior, mini player e player expandido. Os perfis offline usam as faixas e o histórico locais; capas carregadas são guardadas em disco privado.
+A versão 1.5.0 mantém o estilo da versão Web nos modos independente e offline: Início, Buscar, Biblioteca e Rádio na navegação inferior, mini player e player expandido. Os perfis offline usam as faixas e o histórico locais; capas carregadas são guardadas em disco privado. A conexão ao PC agora exige as identidades dos dois aparelhos e permite um único celular autorizado.
 
-1. Copie `releases/acervo-1.4.0.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
+1. Copie `releases/acervo-1.5.0.apk` para o celular e abra o arquivo. Autorize a instalacao pelo navegador ou gerenciador de arquivos usado, caso o Android solicite.
 2. Abra o aplicativo e toque em **Usar neste celular**.
 3. Em **Buscar**, procure uma musica e toque em **Baixar** ou **Baixar e ouvir**. Ela fica salva na biblioteca do celular.
 4. Para controlar outro Acervo, volte a **Conexoes** e use o QR code ou cole o link. A camera so e solicitada ao abrir o leitor.
 
 Para a nuvem, use o link HTTPS real da sua instalacao; nenhum servidor publico e criado ou definido pelo APK. Um exemplo de formato e `https://seu-dominio.com/#pair=CODIGO_DO_QR`, com o codigo real gerado pelo Acervo. O aplicativo lembra o endereco e os cookies de conexao, sem gravar o codigo temporario do QR.
 
-Para a rede local, atualize também o Acervo no PC, reinicie o servidor e gere um novo QR em **Conectar dispositivos**. Escaneie com o leitor do APK. O QR contém a identidade do computador e um endereço HTTPS, na porta 4311 por padrão. Cookies, controles e áudio só são enviados após verificar a chave e o certificado. HTTP, certificado vencido ou chave diferente são recusados. Confira o código em **Proteção** no APK e no PC; uma identidade nova exige desparear e ler outro QR.
+Para conectar ao próprio PC, atualize também o Acervo nele, reinicie o servidor e gere um novo QR em **Conectar dispositivos**. Escaneie com o leitor do APK. O QR contém um convite temporário de uso único, a identidade pública do computador e seu endereço HTTPS, na porta 4311 por padrão. A chave privada do celular é gerada no Android Keystore e não é exportada; o PC exige essa identidade em cada conexão. Copiar cookies não basta para entrar. Confira os códigos dos dois aparelhos em **Proteção** no APK e no PC. Para trocar de celular, remova o anterior no PC antes de gerar outro QR. O vínculo sobrevive ao reinício; reinstalar o app perde a chave do telefone.
 
-O computador local precisa estar ligado e acessível. HTTPS público e Tailscale continuam disponíveis para outras redes. O modo independente continua sem precisar do PC. A proteção usa TLS, sem implementar o protocolo do WhatsApp. Veja [docs/security.md](../docs/security.md). Use `-Offline` em `build-gradle.ps1` para compilar com as ferramentas e dependências já salvas.
+O computador precisa estar ligado e acessível. `ACERVO_PUBLIC_ENDPOINT` permite usar um endereço público/DDNS do próprio PC, desde que exista uma rota TCP até sua porta HTTPS; TLS termina no Acervo. Essa configuração não contorna CGNAT. O modo independente continua sem precisar do PC. A proteção usa TLS com autenticação mútua, sem implementar o protocolo do WhatsApp. Veja [docs/security.md](../docs/security.md) e [docs/isolation.md](../docs/isolation.md). Use `-Offline` em `build-gradle.ps1` para compilar com as ferramentas e dependências já salvas.
 
 A assinatura e local, para instalacao direta. O aplicativo nao e distribuido pela Play Store. Para atualizar, toque em **Atualizar aplicativo** ou instale um novo APK com a mesma chave de assinatura; nao e preciso desinstalar a versao anterior. A instalacao e confirmada pelo proprio Android. O botao depende de uma nova versao publicada no canal de atualizacoes configurado.
 
@@ -56,7 +56,7 @@ O script usa a chave original em `android/signing/acervo-release.jks` e sua senh
 
 Guarde um backup privado dos dois arquivos juntos. Eles permitem assinar futuras atualizacoes compativeis com a instalacao existente. A pasta `signing/` esta excluida pelo `.gitignore`: nao envie a chave ou a senha junto com o APK. Se a chave existir e a senha estiver ausente, a compilacao para em vez de substituir a assinatura.
 
-Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.4.0.apk` com o Android Build Tools no PATH.
+Os fontes do aplicativo ficam em `app/src/main/java/`, com manifesto e recursos em `app/src/main/`. Para verificar o arquivo gerado manualmente, use `apksigner verify --verbose releases/acervo-1.5.0.apk` com o Android Build Tools no PATH.
 
 ## Atualizar pelo aplicativo
 
@@ -68,6 +68,6 @@ Depois de informar e configurar o repositório de atualizações, será possíve
 
 ## Licenças e fontes
 
-O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.4.0-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
+O Android usa NewPipeExtractor e é distribuído sob GPL-3.0 ou posterior. Veja `LICENSE` e `THIRD-PARTY-NOTICES.md`, também acessíveis em **Sobre e licenças**. Os fontes completos estão em `android/` neste repositório e no pacote `releases/acervo-1.5.0-source.zip`, incluindo as dependências abertas correspondentes. Nenhum pacote inclui assinatura privada, senhas ou músicas.
 
 É possível compilar um APK próprio com Gradle e assiná-lo com uma chave própria sem ter acesso à chave original. Essa chave própria não permite atualizar por cima de uma instalação assinada pela chave original. Para empacotar os fontes da distribuição, use `python android/package-source.py --dependency-sources CAMINHO_DOS_FONTES_DAS_DEPENDENCIAS`.

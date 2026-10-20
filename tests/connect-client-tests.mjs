@@ -155,6 +155,52 @@ function sharedBackend(initial = {}) {
   };
 }
 
+const mutualSecurity = { type: 'mtls-pinned', mutual: true, exclusive: true, pcPin: 'a'.repeat(64), phonePin: 'b'.repeat(64), pairedDeviceId: 'phone', publicEndpoint: 'https://public.example:4311' };
+function mutualBackend({ paired = true, pairing = null, unauthorized = false } = {}) {
+  const base = sharedBackend();
+  return { ...base, async fetch(call) {
+    if (call.url === '/api/connect/config') return response({ cloud: false, security: { type: 'mtls-pinned', mutual: true, exclusive: true } });
+    if (call.url === '/api/connect/info' || call.url === '/api/connect/register') {
+      if (unauthorized) return response({ error: 'Leia no APK' }, 401);
+      return response({ ...snapshot('pc'), devices: paired ? [device('pc'), device('phone', false)] : [device('pc')],
+        security: { ...mutualSecurity, phonePin: paired ? mutualSecurity.phonePin : null, pairedDeviceId: paired ? 'phone' : null } });
+    }
+    if (call.url === '/api/connect/pairing' && pairing) return pairing.promise;
+    return base.fetch(call);
+  } };
+}
+
+test('mutual verification shows both identities and paired phones suppress new invites', async () => {
+  const h = browser({ backend: mutualBackend() });
+  await h.AC.initConnect(); h.AC.openDevices(); await flush();
+  assert.match(h.getNode('connect-verification').innerHTML, /AAAAAAAA AAAAAAAA/);
+  assert.match(h.getNode('connect-verification').innerHTML, /BBBBBBBB BBBBBBBB/);
+  assert.match(h.getNode('connect-verification').innerHTML, /https:\/\/public.example:4311/);
+  assert.match(h.getNode('connect-pairing').innerHTML, /remova o celular autorizado/);
+  await h.AC.playerActions['connect-create']();
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 0);
+});
+
+test('concurrent QR generation is deduplicated and cannot resurrect an invite after pairing', async () => {
+  const pending = deferred();
+  const h = browser({ backend: mutualBackend({ paired: false, pairing: pending }) });
+  await h.AC.initConnect(); h.AC.openDevices();
+  h.AC.playerActions['connect-create'](); h.AC.openDevices();
+  assert.equal(h.calls.filter(call => call.url === '/api/connect/pairing').length, 1);
+  h.emit('devices', { ...snapshot('pc'), security: mutualSecurity });
+  pending.resolve(response({ code: 'one-use', expiresAt: Date.parse('2026-10-18T18:05:00Z'), security: { type: 'mtls-pinned', pin: mutualSecurity.pcPin }, candidates: [] }));
+  await flush();
+  assert.equal(h.AC.connect.pairing, null);
+  assert.match(h.getNode('connect-pairing').innerHTML, /remova o celular autorizado/);
+});
+
+test('mutual connection guidance requires the APK identity and hides browser manual claim', async () => {
+  const h = browser({ backend: mutualBackend({ unauthorized: true }) });
+  assert.equal(await h.AC.initConnect(), false);
+  assert.match(h.getNode('modal-root').innerHTML, /APK atualizado/);
+  assert.doesNotMatch(h.getNode('modal-root').innerHTML, /connect-claim-form/);
+});
+
 // Test cases below exercise the public Connect hooks once their implementation is present.
 
 test('controller playback snapshots update visible state without playing local audio', () => {

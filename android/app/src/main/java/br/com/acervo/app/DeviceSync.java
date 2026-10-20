@@ -61,7 +61,7 @@ public final class DeviceSync {
         ProgressDialog dialog;
         MobileLibrary library;
         final Map<String, JSONObject> pull = new LinkedHashMap<>();
-        final Map<String, String> push = new LinkedHashMap<>();
+        final Map<String, MobileLibrary.Track> push = new LinkedHashMap<>();
         final List<String> errors = new ArrayList<>();
         int incompatible;
         int pulled;
@@ -98,7 +98,7 @@ public final class DeviceSync {
                         }
                     }
                     for (MobileLibrary.Track track : local) {
-                        if (validId(track.id) && !remoteIds.contains(track.id)) push.put(track.id, title(track.title, track.id));
+                        if (validId(track.id) && !remoteIds.contains(track.id)) push.put(track.id, track);
                     }
                     ensureRunning();
                     activity.runOnUiThread(() -> {
@@ -153,18 +153,20 @@ public final class DeviceSync {
                         }
                     }
                     index = 0;
-                    for (Map.Entry<String, String> song : push.entrySet()) {
+                    for (Map.Entry<String, MobileLibrary.Track> song : push.entrySet()) {
                         ensureRunning();
                         index++;
-                        updateProgress("Enviando para o computador (" + index + "/" + push.size() + ")\n" + song.getValue());
+                        MobileLibrary.Track track = song.getValue();
+                        String label = title(track.title, track.id);
+                        updateProgress("Enviando para o computador (" + index + "/" + push.size() + ")\n" + label);
                         try {
-                            JSONObject result = request("POST", "/api/import", new JSONObject().put("videoId", song.getKey()));
+                            JSONObject result = request("POST", "/api/import", new JSONObject(importPayload(track.id, track.title, track.artist, track.duration, track.thumbnail)));
                             if (result.optString("jobId").isEmpty()) throw new IOException("O computador nao confirmou a tarefa de download.");
                             queued++;
                         } catch (Exception failure) {
                             if (stopped()) throw new Cancelled();
                             pushFailed++;
-                            recordError(song.getValue(), failure);
+                            recordError(label, failure);
                             // Authentication and connectivity failures affect every following request.
                             if (failure instanceof Unavailable || failure instanceof java.net.ConnectException
                                     || failure instanceof java.net.UnknownHostException || failure instanceof java.net.SocketTimeoutException) break;
@@ -352,6 +354,23 @@ public final class DeviceSync {
     }
 
     private static boolean validId(String id) { return id != null && id.matches("[A-Za-z0-9_-]{11}"); }
+
+    /** Preserve known metadata when the PC queues a source download, without sending local file paths. */
+    static Map<String, Object> importPayload(String id, String title, String artist, long duration, String thumbnail) {
+        if (!validId(id)) throw new IllegalArgumentException("Identificador da música inválido.");
+        Map<String, Object> meta = new LinkedHashMap<>();
+        if (title != null && !title.trim().isEmpty()) meta.put("title", title);
+        if (artist != null && !artist.trim().isEmpty()) {
+            meta.put("artist", artist);
+            meta.put("channel", artist); // Older PC versions read the search result's channel field.
+        }
+        if (duration > 0) meta.put("duration", duration);
+        if (thumbnail != null && !thumbnail.trim().isEmpty()) meta.put("thumbnail", thumbnail);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("videoId", id);
+        payload.put("meta", meta);
+        return payload;
+    }
 
     private static String title(String value, String fallback) {
         if (value == null || value.trim().isEmpty()) return fallback;

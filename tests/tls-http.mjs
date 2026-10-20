@@ -7,7 +7,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { lanAddresses } from '../lib/connect.js';
 
@@ -22,6 +23,8 @@ const origin = 'http://127.0.0.1:' + port;
 const secureOrigin = 'https://127.0.0.1:' + securePort;
 const lanAddress = lanAddresses()[0]?.address;
 const trackId = 'tls-fixture-track';
+const largeTrackId = 'tls-fixture-large';
+const largeTrackSize = 64 * 1024 * 1024;
 const audioBytes = Buffer.from('Artificial audio fixture. These bytes are not a real song. 0123456789');
 const libraryText = JSON.stringify({ version: 1, tracks: [{ id: trackId, title: 'TLS fixture', artist: 'Isolated test artist', duration: 80, addedAt: '2026-10-19T00:00:00Z', plays: 0 }], listeningHistory: [] });
 const streams = new Set();
@@ -31,6 +34,21 @@ let childClosed = null;
 let output = '';
 let certificate;
 let trustedPin;
+let phoneIdentity;
+let otherIdentity;
+
+async function clientIdentity(name) {
+  const keyFile = path.join(directory, name + '-key.pem');
+  const certFile = path.join(directory, name + '-cert.pem');
+  const args = ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:prime256v1', '-sha256', '-nodes', '-days', '30',
+    '-subj', '/CN=Isolated Acervo Phone', '-addext', 'basicConstraints=critical,CA:FALSE', '-addext', 'keyUsage=critical,digitalSignature',
+    '-addext', 'extendedKeyUsage=clientAuth', '-keyout', keyFile, '-out', certFile];
+  const executable = process.env.OPENSSL_BIN || (process.platform === 'win32' ? 'C:/Program Files/Git/usr/bin/openssl.exe' : 'openssl');
+  await promisify(execFile)(executable, args, { timeout: 30000, maxBuffer: 262144, windowsHide: true });
+  const identity = { key: await fs.readFile(keyFile), cert: await fs.readFile(certFile) };
+  identity.pin = crypto.createHash('sha256').update(new crypto.X509Certificate(identity.cert).publicKey.export({ type: 'spki', format: 'der' })).digest('hex');
+  return identity;
+}
 
 async function availablePorts() {
   const probes = [net.createServer(), net.createServer()];
@@ -52,11 +70,12 @@ function pinChecker(expected) {
   };
 }
 
-function options(encrypted, pathname, { method = 'GET', body, cookie, deviceId, headers = {}, address = '127.0.0.1', trust = true, pin = trustedPin } = {}) {
+function options(encrypted, pathname, { method = 'GET', body, cookie, deviceId, headers = {}, address = '127.0.0.1', trust = true, pin = trustedPin, identity = phoneIdentity } = {}) {
   const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
   const base = encrypted ? secureOrigin : origin;
   return { payload, request: { hostname: address, port: encrypted ? securePort : port, path: pathname, method, agent: false,
-    ...(encrypted ? { rejectUnauthorized: true, ...(trust ? { ca: certificate } : {}), ...(pin ? { checkServerIdentity: pinChecker(pin) } : {}) } : {}),
+    ...(encrypted ? { rejectUnauthorized: true, ...(trust ? { ca: certificate } : {}), ...(pin ? { checkServerIdentity: pinChecker(pin) } : {}),
+      ...(identity ? { cert: identity.cert, key: identity.key } : {}) } : {}),
     headers: { ...(method !== 'GET' ? { Origin: base } : {}), ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': payload.length } : {}),
       ...(cookie ? { Cookie: cookie } : {}), ...(deviceId ? { 'X-Acervo-Device': deviceId } : {}), ...headers } } };
 }
@@ -79,6 +98,27 @@ function request(encrypted, pathname, configuration = {}) {
     });
     req.setTimeout(8000, () => req.destroy(new Error('TLS HTTP fixture request timed out: ' + pathname)));
     req.once('error', reject); req.end(prepared.payload);
+  });
+}
+
+function pausedBody(pathname, configuration) {
+  const prepared = options(true, pathname, configuration);
+  return new Promise((resolve, reject) => {
+    const req = https.request(prepared.request, res => {
+      req.setTimeout(0);
+      res.pause();
+      const body = { req, res, received: 0 };
+      res.on('data', bytes => { body.received += bytes.length; });
+      body.closed = new Promise((done, fail) => {
+        const timeout = setTimeout(() => { req.destroy(); fail(new Error('Revocation did not cancel the open audio response')); }, 5000);
+        res.once('error', () => {});
+        res.once('close', () => { clearTimeout(timeout); done(); });
+      });
+      resolve(body);
+    });
+    req.once('error', reject);
+    req.setTimeout(8000, () => req.destroy(new Error('Paused fixture body timed out')));
+    req.end();
   });
 }
 
@@ -135,7 +175,8 @@ async function start() {
   output = '';
   child = spawn(process.execPath, ['--import', pathToFileURL(noNetworkFile).href, serverFile], { cwd: directory, windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ACERVO_DATA_DIR: dataDirectory, ACERVO_MODE: 'local', ACERVO_HOST: '0.0.0.0',
-      PORT: String(port), ACERVO_HTTPS_PORT: String(securePort), ACERVO_TRUST_TAILSCALE: '0' } });
+      PORT: String(port), ACERVO_HTTPS_PORT: String(securePort), ACERVO_HTTP_HOST: '127.0.0.1', ACERVO_HTTPS_HOST: '0.0.0.0',
+      ACERVO_TRUST_TAILSCALE: '0', ACERVO_PUBLIC_ENDPOINT: '' } });
   child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { output += chunk; });
   childClosed = new Promise(resolve => child.once('close', resolve));
   let ready = false;
@@ -160,8 +201,11 @@ try {
   await fs.mkdir(path.join(dataDirectory, 'tracks'), { recursive: true });
   await fs.writeFile(path.join(dataDirectory, 'library.json'), libraryText);
   await fs.writeFile(path.join(dataDirectory, 'tracks', trackId + '.mp3'), audioBytes);
+  const largeTrack = await fs.open(path.join(dataDirectory, 'tracks', largeTrackId + '.mp3'), 'w');
+  try { await largeTrack.truncate(largeTrackSize); } finally { await largeTrack.close(); }
   await fs.writeFile(noNetworkFile, "import os from 'node:os';\nglobalThis.fetch=async()=>{ console.error('TLS_UNEXPECTED_EXTERNAL_FETCH'); throw new Error('External fetch disabled in TLS fixture'); };\n"
     + (lanAddress ? '' : "os.networkInterfaces=()=>({Fixture:[{address:'192.168.253.2',internal:false,family:'IPv4'}]});\n"));
+  [phoneIdentity, otherIdentity] = await Promise.all([clientIdentity('phone-a'), clientIdentity('phone-b')]);
   await start();
   const originalPin = trustedPin;
   const originalCertificate = certificate;
@@ -170,9 +214,12 @@ try {
   assert.equal(originalIdentityRecord.fingerprint, new crypto.X509Certificate(certificate).fingerprint256.replaceAll(':', '').toLowerCase());
   await assert.rejects(request(true, '/api/connect/config', { trust: false, pin: null }), error => ['DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'].includes(error.code));
   await assert.rejects(request(true, '/api/connect/config', { pin: '00'.repeat(32) }), error => error.code === 'ACERVO_PIN_MISMATCH');
+  await assert.rejects(request(true, '/api/connect/config', { identity: { cert: phoneIdentity.cert, key: otherIdentity.key } }),
+    error => /key values mismatch|KEY_VALUES_MISMATCH/i.test(String(error.message || error.code)), 'Borrowing a certificate without its private key cannot establish TLS');
   const config = await request(true, '/api/connect/config');
   assert.equal(config.status, 200); assert.ok(['TLSv1.2', 'TLSv1.3'].includes(config.protocol));
-  assert.deepEqual(config.data.security, { type: 'tls-pinned', required: true, port: securePort });
+  assert.deepEqual(config.data.security, { type: 'mtls-pinned', required: true, port: securePort, mutual: true, exclusive: true });
+  assert.equal((await request(true, '/api/connect/config', { identity: null })).status, 200);
   assert.equal((await request(true, '/api/library')).status, 401, 'TLS loopback is not the desktop owner');
   const pc = await request(false, '/api/connect/register', { method: 'POST', body: { deviceId: 'tls-http-pc', name: 'TLS fixture PC', kind: 'desktop' } });
   assert.equal(pc.status, 200); assert.equal(pc.data.local, true);
@@ -187,11 +234,24 @@ try {
     assert.equal(new URLSearchParams(parsed.hash.slice(1)).get('pair'), pairing.data.code);
   }
   assert.equal(Buffer.from(pairing.data.qrDataUrl.split(',')[1], 'base64').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  assert.equal(pairing.data.security.mutual, true); assert.equal(pairing.data.security.exclusive, true);
+  assert.equal(new URLSearchParams(new URL(pairing.data.url).hash.slice(1)).get('mutual'), '1');
+  assert.equal((await request(true, '/api/connect/claim', { method: 'POST', identity: null, body: { code: pairing.data.code },
+    headers: { 'X-Acervo-Client-Pin': phoneIdentity.pin } })).status, 401, 'A header cannot replace TLS client proof');
   const claim = await request(true, '/api/connect/claim', { method: 'POST', body: { code: pairing.data.code, name: 'TLS fixture phone', kind: 'mobile' } });
   assert.equal(claim.status, 200); assert.equal(claim.data.local, false); assert.equal(claim.data.admin, false);
   const setCookie = claim.headers['set-cookie'][0];
   assert.match(setCookie, /; HttpOnly; SameSite=Strict; Max-Age=2592000; Secure$/);
   const cookie = setCookie.split(';')[0];
+  assert.equal(claim.data.security.phonePin, phoneIdentity.pin);
+  const storedPhone = await fs.readFile(path.join(dataDirectory, 'paired-phone.json'), 'utf8');
+  assert.equal(JSON.parse(storedPhone).phone.pin, phoneIdentity.pin);
+  assert.equal(storedPhone.includes(cookie.split('=')[1]), false);
+  assert.equal((await request(true, '/api/library', { cookie, identity: null })).status, 401, 'Stolen cookie alone grants no access');
+  assert.equal((await request(true, '/api/library', { cookie, identity: otherIdentity })).status, 401, 'Another phone cannot replay the cookie');
+  const additionalPairing = await request(false, '/api/connect/pairing', { method: 'POST', body: {} });
+  assert.equal((await request(true, '/api/connect/claim', { method: 'POST', identity: otherIdentity,
+    body: { code: additionalPairing.data.code } })).status, 409, 'Only one phone may bind at a time');
   assert.equal((await request(true, '/api/connect/claim', { method: 'POST', body: { code: pairing.data.code } })).status, 401);
   const library = await request(true, '/api/library', { cookie });
   assert.equal(library.status, 200); assert.deepEqual(library.data.tracks.map(track => track.id), [trackId]);
@@ -227,14 +287,19 @@ try {
   assert.equal((await request(false, '/api/connect/register', { method: 'POST', body: {}, headers: { Origin: 'http://evil.example' } })).status, 403);
   assert.equal((await request(false, '/api/connect/register', { method: 'POST', body: {}, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403);
   if (lanAddress) {
-    for (const pathname of ['/api/library', '/api/stream/' + trackId, '/api/connect/events']) {
-      assert.equal((await request(false, pathname, { address: lanAddress, cookie, headers: { 'X-Forwarded-For': '127.0.0.1', 'X-Forwarded-Proto': 'https', 'X-Acervo-Device': pcId } })).status, 426);
-    }
-    assert.equal((await request(false, '/api/connect/claim', { address: lanAddress, method: 'POST', body: { code: pairing.data.code }, headers: { 'X-Forwarded-Proto': 'https' } })).status, 426);
-    assert.equal((await request(false, '/api/connect/config', { address: lanAddress, cookie })).status, 200);
+    await assert.rejects(request(false, '/api/library', { address: lanAddress, cookie,
+      headers: { 'X-Forwarded-For': '127.0.0.1', 'X-Forwarded-Proto': 'https', 'X-Acervo-Device': pcId } }),
+    error => ['ECONNREFUSED', 'EHOSTUNREACH'].includes(error.code), 'The desktop owner HTTP listener is isolated to loopback');
   } else console.log('TLS HTTP: no private LAN interface; actual LAN plaintext checks skipped, unit coverage remains active.');
   assert.equal((await request(true, '/api/connect/devices/' + pcId, { method: 'DELETE', cookie })).status, 403);
+  const activeAudio = await pausedBody('/api/stream/' + largeTrackId, { cookie });
+  assert.equal(activeAudio.res.statusCode, 200);
+  assert.equal(Number(activeAudio.res.headers['content-length']), largeTrackSize);
   assert.equal((await request(false, '/api/connect/devices/' + claim.data.deviceId, { method: 'DELETE', deviceId: pcId })).status, 200);
+  activeAudio.res.resume();
+  await activeAudio.closed;
+  assert.equal(activeAudio.res.complete, false, 'Revocation terminates an already open encrypted audio response');
+  assert.ok(activeAudio.received < largeTrackSize);
   await until(() => phoneStream.seen.some(event => event.type === 'revoked'));
   assert.equal((await request(true, '/api/library', { cookie })).status, 401);
   const beforeRestart = await request(false, '/api/connect/pairing', { method: 'POST', body: {} });
@@ -247,10 +312,20 @@ try {
   await start();
   assert.equal(trustedPin, originalPin, 'PC cryptographic identity survives restart');
   assert.deepEqual(certificate, originalCertificate);
-  assert.equal((await request(true, '/api/library', { cookie: restartCookie })).status, 401, 'Ephemeral local session requires a fresh QR after restart');
+  assert.equal((await request(true, '/api/library')).status, 200, 'Paired phone proves private key possession after restart without any cookie');
+  assert.equal((await request(true, '/api/library', { cookie: restartCookie, identity: otherIdentity })).status, 401);
   const renewed = await request(false, '/api/connect/pairing', { method: 'POST', body: {} });
   assert.equal(renewed.status, 200); assert.equal(renewed.data.security.pin, originalPin);
   assert.equal((await request(true, '/api/connect/claim', { method: 'POST', body: { code: renewed.data.code } })).status, 200);
+  assert.equal((await request(false, '/api/connect/devices/' + beforeRestartClaim.data.deviceId, { method: 'DELETE' })).status, 200);
+  await stop();
+  await start();
+  assert.equal((await request(true, '/api/library', { cookie: restartCookie })).status, 401, 'Revocation survives restart and rejects the old private identity');
+  const replacementPairing = await request(false, '/api/connect/pairing', { method: 'POST', body: {} });
+  assert.equal((await request(true, '/api/connect/claim', { method: 'POST', identity: otherIdentity,
+    body: { code: replacementPairing.data.code } })).status, 200, 'A new phone can bind only after revocation and a fresh QR');
+  assert.equal((await request(true, '/api/library', { identity: otherIdentity })).status, 200);
+  assert.equal((await request(true, '/api/library', { cookie: restartCookie })).status, 401);
   await stop();
   // Replacing this fixture's entire identity simulates another PC at the remembered address.
   await fs.rename(identityDirectory, path.join(dataDirectory, 'original-identity-fixture'));
@@ -261,7 +336,7 @@ try {
   assert.equal(await fs.readFile(path.join(dataDirectory, 'library.json'), 'utf8'), libraryText);
   await stop();
   assert.equal(outputs.some(value => value.includes('TLS_UNEXPECTED_EXTERNAL_FETCH')), false);
-  console.log('TLS HTTP passed: isolated PC QR pairing, trusted pin, untrusted/wrong/changed certificate rejection, TLS session cookies, encrypted SSE and Range audio, bidirectional playback handoff, CSRF and identity spoof rejection, revocation, LAN HTTP replay rejection, persistent identity and renewed pairing after restart. User library unchanged.');
+  console.log('mTLS HTTP passed: isolated QR pairing, trusted PC pin, client private-key proof, exclusive persistent phone identity, stolen cookie rejection, encrypted SSE and Range audio, bidirectional playback handoff, CSRF and spoof rejection, persistent revocation, LAN HTTP replay rejection, reconnect without cookie after restart and changed PC identity rejection. User library unchanged.');
 } finally {
   await stop();
   const relative = path.relative(os.tmpdir(), directory);

@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
-import { readFile, writeFile, mkdir, stat, unlink, rename, readdir } from 'node:fs/promises';
-import { createReadStream, existsSync } from 'node:fs';
+import { writeFile, mkdir, unlink, rename, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
@@ -14,6 +14,10 @@ import { runRadio, validateRadioInput } from './lib/radio.js';
 import { createConnectManager } from './lib/connect.js';
 import { createCatalogService } from './lib/catalog.js';
 import { loadTlsIdentity } from './lib/tls.js';
+import { openSafeFile } from './lib/safe-files.js';
+import { sendFile } from './lib/file-response.js';
+import { validVideoId, validateImportInput, safeThumbnailUrl } from './lib/input-policy.js';
+import { resolveTrackMetadata } from './lib/track-metadata.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, 'public');
@@ -22,11 +26,13 @@ const TRACKS = path.join(DATA, 'tracks');
 const COVERS = path.join(DATA, 'covers');
 const TMP = path.join(DATA, 'tmp');
 const TRASH = path.join(DATA, 'trash');
-const ANDROID_VERSION = { versionCode: 11, versionName: '1.4.0' };
+const ANDROID_VERSION = { versionCode: 12, versionName: '1.5.0' };
 const ANDROID_APK = path.join(ROOT, 'releases', 'acervo-' + ANDROID_VERSION.versionName + '.apk');
 const PORT = Number(process.env.PORT) || 4310;
 const HOST = process.env.ACERVO_HOST || '0.0.0.0';
 const MODE = process.env.ACERVO_MODE || 'local';
+const HTTP_HOST = process.env.ACERVO_HTTP_HOST || (MODE === 'local' ? '127.0.0.1' : HOST);
+const HTTPS_HOST = process.env.ACERVO_HTTPS_HOST || HOST;
 if (!['local', 'cloud'].includes(MODE)) throw new Error('ACERVO_MODE deve ser local ou cloud.');
 const SECURE_PORT = Number(process.env.ACERVO_HTTPS_PORT || PORT + 1);
 if (MODE === 'local' && (!Number.isInteger(SECURE_PORT) || SECURE_PORT < 1 || SECURE_PORT > 65535 || SECURE_PORT === PORT)) {
@@ -34,7 +40,8 @@ if (MODE === 'local' && (!Number.isInteger(SECURE_PORT) || SECURE_PORT < 1 || SE
 }
 const tlsIdentity = MODE === 'local' ? await loadTlsIdentity({ directory: path.join(DATA, 'identity') }) : null;
 const connect = createConnectManager({ port: PORT, getTrack: Library.get, mode: MODE,
-  ...(tlsIdentity ? { secureTransport: { port: SECURE_PORT, pin: tlsIdentity.spkiPin } } : {}),
+  ...(tlsIdentity ? { secureTransport: { port: SECURE_PORT, pin: tlsIdentity.spkiPin, requireClientIdentity: true,
+    deviceFile: path.join(DATA, 'paired-phone.json'), publicEndpoint: process.env.ACERVO_PUBLIC_ENDPOINT } } : {}),
   publicOrigin: process.env.ACERVO_PUBLIC_ORIGIN, adminPassword: process.env.ACERVO_ADMIN_PASSWORD,
   trustTailscale: process.env.ACERVO_TRUST_TAILSCALE === '1',
   stateFile: MODE === 'cloud' ? path.join(DATA, 'connect-sessions.json') : undefined });
@@ -94,36 +101,35 @@ function readBody(req) {
   });
 }
 
-function cleanTitle(value) {
-  let t = String(value || '').trim();
-  t = t.replace(/\((?:official\s*(?:music\s*)?video|official\s*audio|official|lyric\s*video|lyrics|audio|video|visualizer|hd|hq|4k|explicit)\)/ig, ' ');
-  t = t.replace(/\[(?:official\s*(?:music\s*)?video|official\s*audio|official|lyric\s*video|lyrics|audio|video|visualizer|hd|hq|4k|explicit)\]/ig, ' ');
-  t = t.replace(/\s*[-|]\s*(?:official\s*(?:music\s*)?video|official\s*audio|video\s*oficial|audio\s*oficial).*$/i, ' ');
-  return t.replace(/\s{2,}/g, ' ').replace(/[\s\-|]+$/g, '').trim();
-}
-
-function splitArtistTitle(rawTitle) {
-  const t = cleanTitle(rawTitle);
-  const m = t.match(/^(.{2,60}?)\s+[-\u2013]\s+(.{2,140})$/);
-  if (m) return { artist: m[1].trim(), title: m[2].trim() };
-  return { artist: '', title: t };
-}
-
 function pickThumb(info) {
   const thumbs = Array.isArray(info.thumbnails) ? info.thumbnails.slice() : [];
   thumbs.sort(function (a, b) { return (b.width || 0) - (a.width || 0); });
-  return (thumbs[0] && thumbs[0].url) || ('https://i.ytimg.com/vi/' + info.id + '/hqdefault.jpg');
+  return thumbs.map(function (thumb) { return safeThumbnailUrl(thumb?.url); }).find(Boolean)
+    || (validVideoId(info.id) ? 'https://i.ytimg.com/vi/' + info.id + '/hqdefault.jpg' : null);
 }
 
 async function fetchCover(videoId, url) {
+  const target = safeThumbnailUrl(url);
+  if (!validVideoId(videoId) || !target) return null;
   const out = path.join(COVERS, videoId + '.jpg');
   if (existsSync(out)) return out;
   try {
-    const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
-    if (!response.ok) return null;
-    const buf = Buffer.from(await response.arrayBuffer());
+    const response = await fetch(target, { signal: AbortSignal.timeout(15000), redirect: 'error' });
+    if (!response.ok || !/^image\//i.test(response.headers.get('content-type') || '')) {
+      await response.body?.cancel(); return null;
+    }
+    const maxBytes = 5 * 1024 * 1024;
+    if (Number(response.headers.get('content-length')) > maxBytes) { await response.body?.cancel(); return null; }
+    const chunks = [];
+    let length = 0;
+    for await (const chunk of response.body) {
+      length += chunk.length;
+      if (length > maxBytes) return null;
+      chunks.push(chunk);
+    }
+    const buf = Buffer.concat(chunks, length);
     if (buf.length < 500) return null;
-    await writeFile(out, buf);
+    await writeFile(out, buf, { flag: 'wx' });
     return out;
   } catch (e) {
     return null;
@@ -135,6 +141,7 @@ function bumpJob(job, patch) {
 }
 
 function enqueueImport(input) {
+  validateImportInput(input);
   const job = {
     id: crypto.randomUUID(),
     status: 'queued',
@@ -182,6 +189,7 @@ async function processImport(job) {
     videoId = found[0].videoId;
     meta = found[0];
   }
+  if (!validVideoId(videoId)) throw new Error('Identificador de vídeo inválido.');
   job.videoId = videoId;
 
   const existing = await Library.findByVideo(videoId);
@@ -197,21 +205,13 @@ async function processImport(job) {
   bumpJob(job, { stage: 'Metadados', progress: 8, message: 'Lendo titulo, artista e capa' });
   let info = null;
   try { info = await videoInfo(videoId); } catch (e) { info = null; }
-  const source = info || meta || {};
-  const rawTitle = source.track || source.title || (meta && meta.title) || 'Faixa sem titulo';
-  const parsed = splitArtistTitle(rawTitle);
-  let artist = source.artist || source.creator || source.uploader || (meta && meta.channel) || '';
-  artist = String(artist).replace(/\s*-\s*Topic$/i, '').replace(/\s*VEVO$/i, '').trim();
-  let title = parsed.title;
-  if (!artist && parsed.artist) artist = parsed.artist;
-  if (!artist) artist = 'Artista desconhecido';
-  if (!title) title = rawTitle;
-  const duration = Number(source.duration) || (meta && meta.duration) || 0;
-  const genre = source.genre || '';
-  const album = source.album || '';
-  const year = source.release_year || (source.upload_date ? String(source.upload_date).slice(0, 4) : '');
-  const tags = Array.isArray(source.tags) ? source.tags.slice(0, 8) : [];
-  const thumb = pickThumb(Object.assign({ id: videoId }, source));
+  const metadata = resolveTrackMetadata(info, meta);
+  const { title, artist, duration, genre, album, year, tags } = metadata;
+  const thumb = pickThumb({ id: videoId, thumbnails: [
+    ...(Array.isArray(info?.thumbnails) ? info.thumbnails : []),
+    ...(Array.isArray(meta?.thumbnails) ? meta.thumbnails : []),
+    ...(meta?.thumbnail ? [{ url: meta.thumbnail }] : [])
+  ] });
 
   const workDir = path.join(TMP, videoId + '-' + Date.now());
   await mkdir(workDir, { recursive: true });
@@ -244,8 +244,8 @@ async function processImport(job) {
     tags: tags,
     duration: probed.duration || duration,
     sourceUrl: 'https://www.youtube.com/watch?v=' + videoId,
-    sourceTitle: rawTitle,
-    channel: (meta && meta.channel) || source.uploader || '',
+    sourceTitle: metadata.sourceTitle,
+    channel: metadata.channel,
     thumbnail: coverPath ? '/api/cover/' + videoId : thumb,
     hasCover: Boolean(coverPath),
     loudness: {
@@ -362,78 +362,37 @@ async function discoverFor(id) {
   return out;
 }
 
-function streamFile(req, res, file, type) {
-  stat(file).then(function (info) {
-    const total = info.size;
-    const range = req.headers.range;
-    if (range) {
-      const m = String(range).match(/bytes=(\d*)-(\d*)/);
-      if (m) {
-        const start = m[1] ? parseInt(m[1], 10) : 0;
-        const end = m[2] ? parseInt(m[2], 10) : Math.min(total - 1, start + 1024 * 1024);
-        if (start >= total) {
-          res.writeHead(416, { 'Content-Range': 'bytes */' + total });
-          return res.end();
-        }
-        res.writeHead(206, {
-          'Content-Type': type,
-          'Content-Length': end - start + 1,
-          'Content-Range': 'bytes ' + start + '-' + end + '/' + total,
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'private, no-store'
-        });
-        createReadStream(file, { start: start, end: end }).pipe(res);
-        return;
-      }
-    }
-    res.writeHead(200, {
-      'Content-Type': type,
-      'Content-Length': total,
-      'Accept-Ranges': 'bytes',
-      'Cache-Control': 'private, no-store'
-    });
-    createReadStream(file).pipe(res);
-  }).catch(function () {
-    sendJson(res, 404, { error: 'Arquivo nao encontrado.' });
-  });
+function fileId(pathname, prefix) {
+  const id = pathname.slice(prefix.length);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) throw Object.assign(new Error('Identificador inválido.'), { statusCode: 400 });
+  return id;
 }
 
 async function serveStatic(req, res, pathname) {
-  let rel = pathname === '/' ? '/index.html' : pathname;
-  rel = decodeURIComponent(rel);
-  const target = path.normalize(path.join(PUBLIC, rel));
-  if (!target.startsWith(PUBLIC)) { res.writeHead(403); return res.end('Forbidden'); }
-  try {
-    const info = await stat(target);
-    if (info.isDirectory()) throw new Error('dir');
-    const ext = path.extname(target).toLowerCase();
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Content-Length': info.size,
-      'Cache-Control': ext === '.html' || ext === '.js' || ext === '.css' ? 'no-cache' : 'public, max-age=3600'
-    });
-    createReadStream(target).pipe(res);
-  } catch (e) {
-    if (req.method === 'GET' && (req.headers.accept || '').includes('text/html')) {
-      const index = path.join(PUBLIC, 'index.html');
-      const info = await stat(index).catch(function () { return null; });
-      if (info) {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': info.size });
-        return createReadStream(index).pipe(res);
-      }
-    }
-    sendJson(res, 404, { error: 'Nao encontrado.' });
+  let rel;
+  try { rel = decodeURIComponent(pathname === '/' ? '/index.html' : pathname); }
+  catch { throw Object.assign(new Error('Caminho inválido.'), { statusCode: 400 }); }
+  if (/[\x00-\x1f\\:]/.test(rel) || rel.split('/').includes('..')) {
+    throw Object.assign(new Error('Acesso ao arquivo recusado.'), { statusCode: 403 });
   }
+  const target = path.join(PUBLIC, rel);
+  const ext = path.extname(target).toLowerCase();
+  return sendFile(req, res, PUBLIC, target, MIME[ext] || 'application/octet-stream', {
+    'Cache-Control': ext === '.html' || ext === '.js' || ext === '.css' ? 'no-cache' : 'public, max-age=3600'
+  });
 }
 
 async function handleRequest(req, res) {
-  const url = new URL(req.url, 'http://127.0.0.1');
-  const pathname = url.pathname;
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   try {
+    let url;
+    try { url = new URL(req.url, 'http://127.0.0.1'); }
+    catch { return sendJson(res, 400, { error: 'Endereço inválido.' }); }
+    const pathname = url.pathname;
     if (req.method === 'GET' && pathname === '/healthz') return sendJson(res, 200, { ok: true });
     const connection = connect.authorize(req, pathname);
+    connect.trackResponse(req, res, connection);
     if (await connect.handle(req, res, pathname, connection, readBody, sendJson)) return;
     if (req.method === 'GET' && (pathname === '/api/explore' || pathname === '/api/artist')) {
       const controller = new AbortController();
@@ -453,22 +412,22 @@ async function handleRequest(req, res) {
       return;
     }
     if (req.method === 'GET' && pathname === '/api/app/version') {
-      const apk = await readFile(ANDROID_APK).catch(function () { return null; });
+      let apk;
+      let handle;
+      try {
+        handle = await openSafeFile(path.join(ROOT, 'releases'), ANDROID_APK);
+        apk = await handle.readFile();
+      } catch { apk = null; }
+      finally { if (handle) await handle.close(); }
       if (!apk) return sendJson(res, 404, { error: 'Nenhuma atualização Android disponível neste servidor.' });
       return sendJson(res, 200, { ...ANDROID_VERSION, downloadUrl: '/downloads/acervo.apk', sha256: crypto.createHash('sha256').update(apk).digest('hex') });
     }
     if (req.method === 'GET' && pathname === '/downloads/acervo.apk') {
-      const info = await stat(ANDROID_APK).catch(function () { return null; });
-      if (!info || !info.isFile()) return sendJson(res, 404, { error: 'O APK ainda não foi compilado neste computador.' });
-      res.writeHead(200, {
-        'Content-Type': 'application/vnd.android.package-archive',
+      return await sendFile(req, res, path.join(ROOT, 'releases'), ANDROID_APK, 'application/vnd.android.package-archive', {
         'Content-Disposition': 'attachment; filename="acervo-' + ANDROID_VERSION.versionName + '.apk"',
-        'Content-Length': info.size,
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff'
       });
-      createReadStream(ANDROID_APK).pipe(res);
-      return;
     }
     if (req.method === 'GET' && pathname === '/api/health') {
       const all = await Library.all();
@@ -518,7 +477,6 @@ async function handleRequest(req, res) {
     }
     if (req.method === 'POST' && pathname === '/api/import') {
       const body = await readBody(req);
-      if (!body.videoId && !body.url && !body.query) return sendJson(res, 400, { error: 'Informe um link ou uma busca.' });
       const job = enqueueImport(body);
       return sendJson(res, 202, { jobId: job.id, status: job.status });
     }
@@ -597,7 +555,7 @@ async function handleRequest(req, res) {
       return sendJson(res, 200, track);
     }
     if (req.method === 'DELETE' && pathname.startsWith('/api/track/')) {
-      const id = pathname.split('/')[3];
+      const id = fileId(pathname, '/api/track/');
       const track = await Library.get(id);
       if (!track) return sendJson(res, 404, { error: 'Faixa nao encontrada.' });
       const dest = path.join(TRASH, id + '-' + Date.now());
@@ -617,15 +575,14 @@ async function handleRequest(req, res) {
       return sendJson(res, 200, { ok: true, plays: track.plays || 0, lastPlayedAt: track.lastPlayedAt });
     }
     if (req.method === 'GET' && pathname.startsWith('/api/stream/')) {
-      const id = pathname.split('/')[3];
+      const id = fileId(pathname, '/api/stream/');
       const file = path.join(TRACKS, id + '.mp3');
-      return streamFile(req, res, file, 'audio/mpeg');
+      return await sendFile(req, res, TRACKS, file, 'audio/mpeg');
     }
     if (req.method === 'GET' && pathname.startsWith('/api/cover/')) {
-      const id = pathname.split('/')[3];
+      const id = fileId(pathname, '/api/cover/');
       const file = path.join(COVERS, id + '.jpg');
-      if (!existsSync(file)) return sendJson(res, 404, { error: 'Sem capa.' });
-      return streamFile(req, res, file, 'image/jpeg');
+      return await sendFile(req, res, COVERS, file, 'image/jpeg');
     }
     if (req.method === 'GET' && pathname.startsWith('/api/recommend/')) {
       const id = pathname.split('/')[3];
@@ -641,12 +598,12 @@ async function handleRequest(req, res) {
     }
     if (req.method === 'GET') {
       const ua = String(req.headers['user-agent'] || '');
-      if (pathname === '/' && /AcervoAndroid/i.test(ua)) return serveStatic(req, res, '/index.html');
-      if (pathname === '/' || pathname === '/escolher' || pathname === '/escolher/') return serveStatic(req, res, '/escolher.html');
-      if (pathname === '/pc' || pathname === '/pc/') return serveStatic(req, res, '/index.html');
-      if (pathname === '/web' || pathname === '/web/') return serveStatic(req, res, '/index.html');
+      if (pathname === '/' && /AcervoAndroid/i.test(ua)) return await serveStatic(req, res, '/index.html');
+      if (pathname === '/' || pathname === '/escolher' || pathname === '/escolher/') return await serveStatic(req, res, '/escolher.html');
+      if (pathname === '/pc' || pathname === '/pc/') return await serveStatic(req, res, '/index.html');
+      if (pathname === '/web' || pathname === '/web/') return await serveStatic(req, res, '/index.html');
       if (pathname === '/web.html') { res.writeHead(302, { Location: '/web' + url.search, 'Cache-Control': 'no-store' }); return res.end(); }
-      return serveStatic(req, res, pathname);
+      return await serveStatic(req, res, pathname);
     }
     sendJson(res, 405, { error: 'Metodo nao permitido.' });
   } catch (err) {
@@ -657,14 +614,16 @@ async function handleRequest(req, res) {
 
 const server = http.createServer(handleRequest);
 if (tlsIdentity) {
-  const secureServer = https.createServer({ key: tlsIdentity.key, cert: tlsIdentity.cert, minVersion: 'TLSv1.2' }, handleRequest);
+  // Private client identities are pinned by Connect after a one-time QR claim.
+  // TLS validates possession; Connect validates the exact enrolled certificate.
+  const secureServer = https.createServer({ key: tlsIdentity.key, cert: tlsIdentity.cert, minVersion: 'TLSv1.2', requestCert: true, rejectUnauthorized: false }, handleRequest);
   await new Promise((resolve, reject) => {
     secureServer.once('error', reject);
-    secureServer.listen(SECURE_PORT, HOST, resolve);
+    secureServer.listen(SECURE_PORT, HTTPS_HOST, resolve);
   });
   console.log('Conexão criptografada do APK disponível na porta ' + SECURE_PORT + '. Pareie pelo QR code no computador.');
 }
 
-server.listen(PORT, HOST, function () {
+server.listen(PORT, HTTP_HOST, function () {
   console.log(MODE === 'cloud' ? 'Acervo na nuvem: ' + process.env.ACERVO_PUBLIC_ORIGIN : 'Acervo rodando em http://127.0.0.1:' + PORT);
 });

@@ -15,20 +15,28 @@ public final class SecureTransport {
     private static SharedPreferences pins(Context context) { return context.getSharedPreferences("acervo_server_identities", Context.MODE_PRIVATE); }
     public static String getPin(Context context, String origin) { return pins(context).getString(PairingLink.parse(origin).origin, null); }
     public static boolean hasPin(Context context, String origin) { return PinnedTls.validPin(getPin(context, origin)); }
-    public static void forget(Context context, String origin) { pins(context).edit().remove(PairingLink.parse(origin).origin).commit(); }
+    public static synchronized void forget(Context context, String origin) throws IOException {
+        String canonical = PairingLink.parse(origin).origin;
+        PhoneIdentity.forget(context, canonical);
+        if (!pins(context).edit().remove(canonical).commit()) throw new IOException("Não foi possível remover a identidade do computador.");
+    }
 
     /** Called only after the person scans/accepts a QR. Key changes need explicit removal first. */
     public static void trust(Context context, PairingLink link) throws IOException {
         if (!link.origin.startsWith("https://")) throw new IOException("Esta conexão antiga usa HTTP. Gere um novo QR code seguro no computador.");
+        if (link.spkiPin != null && link.pairToken != null && !link.requireClientIdentity) throw new IOException("Este QR code é antigo. Atualize o Acervo no PC e gere um novo QR com a identidade dos dois dispositivos.");
         String host = URI.create(link.origin).getHost();
         if (link.spkiPin == null) {
-            if (PairingLink.isPrivateIPv4(host) && !hasPin(context, link.origin)) throw new IOException("Escaneie o QR code seguro do computador para confirmar sua identidade.");
+            if (hasPin(context, link.origin)) PhoneIdentity.keyManagers(context, link.origin);
+            else if (PairingLink.isPrivateIPv4(host)) throw new IOException("Escaneie o QR code seguro do computador para confirmar sua identidade.");
             return;
         }
-        if (!PairingLink.isPrivateIPv4(host) || !PinnedTls.validPin(link.spkiPin)) throw new IOException("Identidade do QR code inválida.");
+        if (!PinnedTls.validPin(link.spkiPin)) throw new IOException("Identidade do QR code inválida.");
         synchronized (SecureTransport.class) {
             String old = getPin(context, link.origin);
             if (old != null && !old.equals(link.spkiPin)) throw new IOException("A identidade deste computador mudou. Confira o novo código no PC e remova o pareamento antigo antes de parear novamente.");
+            if (old == null) PhoneIdentity.ensure(context, link.origin, link.spkiPin);
+            else PhoneIdentity.keyManagers(context, link.origin);
             if (!pins(context).edit().putString(link.origin, link.spkiPin).commit()) throw new IOException("Não foi possível guardar a identidade do computador.");
         }
     }
@@ -47,8 +55,8 @@ public final class SecureTransport {
             throw new IOException("Esta conexão precisa de um novo pareamento por QR code seguro.");
         }
         if (pin != null) {
-            try { PinnedTls.configure(connection, url.getHost(), pin); }
-            catch (GeneralSecurityException failure) { connection.disconnect(); throw new IOException("Não foi possível verificar a identidade do computador.", failure); }
+            try { PinnedTls.configure(connection, url.getHost(), pin, PhoneIdentity.keyManagers(context, origin)); }
+            catch (GeneralSecurityException | IOException failure) { connection.disconnect(); throw new IOException("Não foi possível verificar a identidade dos aparelhos.", failure); }
         }
         return connection;
     }

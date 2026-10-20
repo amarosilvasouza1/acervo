@@ -28,9 +28,22 @@ public final class PairingLinkTest {
         equal(pin, pinned.spkiPin, "QR carries the exact SPKI SHA256 identity");
         equal(TOKEN, pinned.pairToken, "One-time token is independent of public pin");
         equal(pinned.url, PairingLink.parse("https://192.168.1.10:4314/#spki=" + pin.toUpperCase() + "&pair=" + TOKEN).url, "Canonical pin and fragment ordering");
+        check(!pinned.requireClientIdentity, "Legacy QR is distinguishable for an explicit update message");
+        PairingLink mutual = PairingLink.parse("https://192.168.1.10:4314/#mutual=1&spki=" + pin.toUpperCase() + "&pair=" + TOKEN);
+        check(mutual.requireClientIdentity, "Secure PC QR requires a client identity");
+        equal("https://192.168.1.10:4314/#pair=" + TOKEN + "&spki=" + pin + "&mutual=1", mutual.url, "Mutual QR has canonical field order");
+        check(!PairingLink.parse(mutual.origin).requireClientIdentity && PairingLink.parse(mutual.origin).pairToken == null, "Origin-only reconnect contains no bootstrap secret");
+        for (String publicOrigin : new String[] { "https://music.example.com", "https://music.example.com:4314", "https://8.8.8.8:4314", "https://[2001:4860:4860::8888]:4314" }) {
+            PairingLink publicPc = PairingLink.parse(publicOrigin + "/#pair=" + TOKEN + "&spki=" + pin + "&mutual=1");
+            equal(publicOrigin, publicPc.origin, "User-hosted PC HTTPS endpoint can carry its pinned public key");
+            check(publicPc.requireClientIdentity, "Public PC endpoint keeps mutual identity");
+        }
+        check(!cloud.requireClientIdentity && cloud.spkiPin == null, "System-CA cloud pairing does not request a phone certificate");
+        for (String fragment : new String[] { "pair=" + TOKEN + "&mutual=1", "pair=" + TOKEN + "&spki=" + pin + "&mutual=0", "pair=" + TOKEN + "&spki=" + pin + "&mutual=true", "pair=" + TOKEN + "&spki=" + pin + "&mutual=01", "pair=" + TOKEN + "&mutual=1&mutual=1", "pair=" + TOKEN + "&spki=" + pin + "&mutual=1&next=evil", "pair=" + TOKEN + "&spki=" + pin + "&%6dutual=1", "mutual=1&spki=" + pin, "pair=" + TOKEN + "&spki=" + pin + "&mutual=1%00" }) reject("https://music.example.com/#" + fragment);
+        reject("http://192.168.1.10:4314/#pair=" + TOKEN + "&spki=" + pin + "&mutual=1");
         for (String fragment : new String[] { "spki=" + pin, "pair=" + TOKEN + "&spki=" + "a".repeat(63), "pair=" + TOKEN + "&spki=" + "g".repeat(64), "pair=" + TOKEN + "&pair=" + TOKEN, "pair=" + TOKEN + "&spki=" + pin + "&spki=" + pin, "pair=" + TOKEN + "&spki=" + pin + "&next=evil", "pair=" + TOKEN + "&spki=" + pin + "%00" }) reject("https://192.168.1.10:4314/#" + fragment);
         reject("http://192.168.1.10:4314/#pair=" + TOKEN + "&spki=" + pin);
-        reject("https://music.example.com/#pair=" + TOKEN + "&spki=" + pin);
+        equal(pin, PairingLink.parse("https://music.example.com/#pair=" + TOKEN + "&spki=" + pin).spkiPin, "Legacy public PC pin can be parsed for an update message");
 
         // All edges of the RFC1918 172.16/12 range, without consulting DNS.
         for (int second = 0; second <= 255; second++) {

@@ -18,7 +18,7 @@ ENV NODE_ENV=production \
     XDG_CACHE_HOME=/tmp/acervo-cache
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates ffmpeg python3 python3-venv \
+    && apt-get install -y --no-install-recommends ca-certificates openssl ffmpeg python3 python3-venv \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/acervo-python
 COPY deploy/requirements.txt /tmp/acervo-requirements.txt
