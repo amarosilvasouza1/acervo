@@ -443,7 +443,7 @@
     var warnings = (p.warnings || []).map(function (message) { return '<p class="playlist-warning">' + esc(message) + '</p>'; }).join('');
     return '<div class="view"><div class="view-head"><div><button class="link" data-action="nav" data-view="playlists">← Playlists</button><h1>' + esc(p.name) + '</h1>' +
       '<p class="sub" role="status">' + done + ' de ' + p.entries.length + ' já no acervo' + (failed ? ' · ' + failed + ' não baixadas' : '') + (active ? ' · importando' : '') + '</p>' + source + '</div>' +
-      '<div class="head-actions"><button class="btn btn-ghost btn-sm" data-action="refresh-playlist">' + icon('repeat', 14) + ' Atualizar</button>' +
+      '<div class="head-actions"><button class="btn btn-accent btn-sm" data-action="playlist-play" data-id="' + esc(p.id) + '">' + icon('play', 14) + ' Tocar tudo</button><button class="btn btn-quiet btn-sm" data-action="playlist-shuffle" data-id="' + esc(p.id) + '">' + icon('shuffle', 14) + ' Embaralhar</button><button class="btn btn-ghost btn-sm" data-action="refresh-playlist">' + icon('repeat', 14) + ' Atualizar</button>' +
       '<button class="btn btn-ghost btn-sm" data-action="playlist-report" data-id="' + esc(p.id) + '">Relatório</button>' +
       '<button class="btn btn-accent btn-sm" data-action="import-playlist-all" data-id="' + esc(p.id) + '">' + icon('download', 14) + ' Tentar pendentes</button></div></div>' +
       warnings + (p.provider === 'spotify' ? '<p class="tiny playlist-source-note">Títulos e artistas vieram do Spotify. O áudio é procurado no YouTube; uma versão diferente pode estar disponível.</p>' : '') +
@@ -910,6 +910,17 @@
     });
   }
 
+
+  function playPlaylist(id, shuffle) {
+    var playlist = (S.playlists || []).find(function (item) { return item.id === id; });
+    if (!playlist) return;
+    var ids = playlist.entries.map(trackForEntry).filter(Boolean).map(function (track) { return track.id; });
+    if (!ids.length) { AC.toast('Ainda não há músicas baixadas nesta playlist.', 'error'); return; }
+    if (shuffle) ids.sort(function () { return Math.random() - 0.5; });
+    AC.playQueue(ids);
+  }
+  AC.playerActions['playlist-play'] = function (element) { playPlaylist(element.getAttribute('data-id'), false); };
+  AC.playerActions['playlist-shuffle'] = function (element) { playPlaylist(element.getAttribute('data-id'), true); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();

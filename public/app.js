@@ -852,19 +852,41 @@
   AC.renderQueue = function () {
     var root = $('queue-root');
     if (!root) return;
+    var state = AC.state;
     if (!state.queueOpen) { root.innerHTML = ''; return; }
+    var total = 0;
     var list = state.queue.map(function (id, i) {
       var t = AC.trackById(id);
       if (!t) return '';
-      return '<button class="qitem' + (i === state.qi ? ' is-current' : '') + '" data-action="play-track" data-id="' + AC.esc(id) + '">' +
+      total += Number(t.duration) || 0;
+      return '<div class="qitem' + (i === state.qi ? ' is-current' : '') + '">' +
+        '<button class="qitem-main" data-action="play-track" data-id="' + AC.esc(id) + '" aria-label="Tocar ' + AC.esc(t.title) + '">' +
+        '<span class="qitem-index">' + (i === state.qi ? AC.icon('play', 12) : (i + 1)) + '</span>' +
         '<span class="qitem-cover">' + AC.coverHtml(t) + '</span>' +
-        '<span style="min-width:0"><span class="qitem-title">' + AC.esc(t.title) + '</span><span class="qitem-sub">' + AC.esc(t.artist) + '</span></span>' +
-        '</button>';
+        '<span class="qitem-copy"><span class="qitem-title">' + AC.esc(t.title) + '</span><span class="qitem-sub">' + AC.esc(t.artist) + ' · ' + AC.fmtTime(t.duration) + '</span></span>' +
+        '</button>' +
+        '<span class="qitem-actions">' +
+        '<button class="icon-btn" data-action="queue-up" data-index="' + i + '" aria-label="Mover para cima" title="Mover para cima">&uarr;</button>' +
+        '<button class="icon-btn" data-action="queue-down" data-index="' + i + '" aria-label="Mover para baixo" title="Mover para baixo">&darr;</button>' +
+        '<button class="icon-btn" data-action="queue-remove" data-index="' + i + '" aria-label="Remover da fila" title="Remover">&times;</button>' +
+        '</span></div>';
     }).join('');
-    root.innerHTML = '<div class="queue-panel"><div class="queue-head">' + AC.icon('queue', 16) +
-      '<h3>Fila · ' + state.queue.length + '</h3><button class="icon-btn" style="margin-left:auto" data-action="queue" aria-label="Fechar fila">' + AC.icon('close', 16) + '</button></div>' +
-      '<div class="queue-list">' + (list || '<p class="tiny" style="padding:12px">Fila vazia.</p>') + '</div></div>';
+    root.innerHTML = '<div class="queue-panel"><div class="queue-head"><span class="queue-head-icon">' + AC.icon('queue', 17) + '</span>' +
+      '<div class="queue-title"><h3>Fila de reprodução</h3><small>' + state.queue.length + (state.queue.length === 1 ? ' música' : ' músicas') + ' · ' + AC.fmtTime(total) + '</small></div>' +
+      '<div class="queue-head-actions"><button class="queue-clear" data-action="queue-clear">Limpar</button><button class="icon-btn" data-action="queue" aria-label="Fechar fila">' + AC.icon('close', 16) + '</button></div></div>' +
+      '<div class="queue-list">' + (list || '<div class="queue-empty">' + AC.icon('queue', 28) + '<strong>Fila vazia</strong><small>Toque em uma música para começar.</small></div>') + '</div></div>';
   };
+
+  function queueMove(from, to) {
+    var state = AC.state;
+    if (from < 0 || to < 0 || from >= state.queue.length || to >= state.queue.length) return;
+    var id = state.queue.splice(from, 1)[0];
+    state.queue.splice(to, 0, id);
+    if (state.qi === from) state.qi = to;
+    else if (from < state.qi && to >= state.qi) state.qi--;
+    else if (from > state.qi && to <= state.qi) state.qi++;
+    AC.renderQueue();
+  }
 
   AC.toggleQueue = function () {
     state.queueOpen = !state.queueOpen;
@@ -895,6 +917,23 @@
     },
     mute: function () { AC.toggleMute(); },
     queue: function () { AC.toggleQueue(); },
+    'queue-remove': function (el) {
+      var state = AC.state, i = Number(el.getAttribute('data-index'));
+      if (!Number.isInteger(i) || i < 0 || i >= state.queue.length) return;
+      state.queue.splice(i, 1);
+      if (state.qi > i) state.qi--;
+      else if (state.qi === i) state.qi = Math.min(i, Math.max(0, state.queue.length - 1));
+      AC.renderQueue();
+    },
+    'queue-up': function (el) { queueMove(Number(el.getAttribute('data-index')), Number(el.getAttribute('data-index')) - 1); },
+    'queue-down': function (el) { queueMove(Number(el.getAttribute('data-index')), Number(el.getAttribute('data-index')) + 1); },
+    'queue-clear': function () {
+      var state = AC.state;
+      if (state.current) { state.queue = [state.current.id]; state.qi = 0; }
+      else { state.queue = []; state.qi = -1; }
+      AC.renderQueue();
+      AC.toast('Fila limpa; a música atual foi mantida.');
+    },
     menu: function () { document.body.classList.toggle('nav-open'); },
     'switch-version': function () {
       var target = '/escolher?choose=1';
@@ -955,3 +994,4 @@
   paintPlayer();
   syncMute();
 })();
+
