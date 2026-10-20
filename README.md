@@ -58,7 +58,13 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
-## Novidades 1.5.9
+## Novidades 1.6.0
+
+- O APK usa os mesmos arquivos da web mobile também no modo independente e offline. Biblioteca, busca, artistas, fila e player compartilham a interface; os arquivos da tela ficam no APK e abrem sem o PC.
+- Conectado ao PC, o app dá preferência à música já salva na biblioteca do celular pelo mesmo identificador. O áudio e os trechos solicitados para avançar na música são lidos do arquivo privado, sem nova transferência do servidor. Faixas ausentes continuam vindo do PC.
+- O modo do celular preserva a biblioteca existente e continua buscando e baixando pela própria internet. O menu de três pontos reúne conexões, sincronização, atualização e licenças.
+
+## Histórico 1.5.9
 
 - Fila em painel próprio sobre o player, com música atual, próximas e histórico da sessão. As opções de mover e remover ficam no menu de cada faixa; editar a fila também funciona no dispositivo de reprodução conectado.
 - Player limitado à altura disponível, com cabeçalho fixo e rolagem interna. O fundo desfocado fica recortado dentro do painel.
@@ -176,7 +182,7 @@ O endereço fica disponível apenas dentro da sua tailnet — não é publicado 
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.5.9.apk](releases/acervo-1.5.9.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** para parear outro Acervo.
+Instale [releases/acervo-1.6.0.apk](releases/acervo-1.6.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** no menu de três pontos para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

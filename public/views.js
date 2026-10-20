@@ -5,8 +5,10 @@
   var S = AC.state;
   var esc = AC.esc;
   var icon = AC.icon;
-  var NEWS_VERSION = '1.5.9';
+  var NEWS_VERSION = '1.6.0';
   var NEWS = [
+    ['Mesma web mobile no APK', 'A interface da web agora também abre dentro do APK nos modos independente e offline, com a mesma biblioteca, fila, artistas e player.'],
+    ['Ouvir sem baixar de novo', 'Ao tocar no celular conectado ao PC, músicas já salvas no telefone usam o arquivo local, inclusive para avançar na faixa.'],
     ['Capas sem faixas pretas', 'As bordas horizontais são detectadas e removidas na exibição quando há confiança no recorte, inclusive nas capas offline do Android. As imagens originais são preservadas.'],
     ['Artistas e player com mais conteúdo', 'Foto em destaque, músicas populares, discografia e sua coleção na página do artista. O player reúne capa grande, perfil do artista e próximas músicas.'],
     ['Downloads com menos espera', 'O PC reutiliza metadados do download e preenche as duas vagas da playlist. No Android, fontes compatíveis usam dois leitores por partes, com validação antes de salvar.'],
@@ -477,6 +479,7 @@
           '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">' +
             '<button class="btn btn-ghost btn-sm" data-action="whats-new">' + icon('sparkles', 14) + ' Ver novidades</button>' +
             '<button class="btn btn-quiet btn-sm" data-action="open-offline"' + (bridge ? '' : ' disabled') + '>' + icon('phone', 14) + ' Ouvir offline</button>' +
+            (window.__acervoUpdateApp ? '<button class="btn btn-quiet btn-sm" data-action="app-update">Atualizar aplicativo</button>' : '') +
           '</div>' +
         '</section>' +
       '</div></div>';
@@ -644,6 +647,8 @@
   AC.handleAction = function (name, el) {
     var id = el.getAttribute('data-id');
     switch (name) {
+      case 'app-options': if (window.__acervoOpenAppOptions) window.__acervoOpenAppOptions(); return;
+      case 'app-update': if (window.__acervoUpdateApp) window.__acervoUpdateApp(); return;
       case 'open-download': openDownload(); return;
       case 'download-submit': submitDownload(); return;
       case 'download': {
@@ -868,6 +873,8 @@
   async function boot() {
     AC.hydrateIcons(document);
     if (window.AcervoAndroid) {
+      document.body.classList.add('native-app');
+      var appOptions = $('native-app-options'); if (appOptions) appOptions.hidden = typeof window.__acervoOpenAppOptions !== 'function';
       var offlineLink = $('offline-link'); if (offlineLink) offlineLink.hidden = false;
       var saveAllLink = $('save-all-link'); if (saveAllLink) saveAllLink.hidden = false;
     }
@@ -876,7 +883,7 @@
     try {
       var health = await AC.api('/api/health');
       var conn = $('conn-text');
-      if (conn) conn.textContent = health.tracks + ' faixas · local';
+      if (conn) conn.textContent = health.tracks + (window.__ACERVO_PHONE__ === true ? ' faixas · neste celular' : ' faixas · local');
     } catch (e) {}
     try { await AC.loadLibrary({ silent: true }); } catch (e) { if (e.status !== 401) AC.toast('Servidor indisponível. Inicie com node server.js', 'error'); }
     try { await AC.loadPlaylists(); } catch (e) {}

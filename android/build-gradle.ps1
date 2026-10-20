@@ -29,6 +29,11 @@ foreach ($file in @('settings.gradle', 'build.gradle', 'gradle.properties')) {
 }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app/build.gradle') -Destination (Join-Path $stage 'app/build.gradle')
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'app/src') -Destination (Join-Path $stage 'app/src') -Recurse
+$webAssets = Join-Path $stage 'app/src/main/assets/web'
+New-Item -ItemType Directory -Path $webAssets -Force | Out-Null
+foreach ($asset in @('index.html', 'app.js', 'views.js', 'connect.js', 'radio.js', 'explore.js', 'styles.css', 'mobile.css', 'icon.svg', 'manifest.webmanifest')) {
+    Copy-Item -LiteralPath (Join-Path $projectRoot ('public/' + $asset)) -Destination $webAssets
+}
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [System.IO.File]::WriteAllText((Join-Path $stage 'local.properties'), 'sdk.dir=' + $SdkRoot.Replace('\', '/') + "`n", $utf8)
 $oldJava = $env:JAVA_HOME

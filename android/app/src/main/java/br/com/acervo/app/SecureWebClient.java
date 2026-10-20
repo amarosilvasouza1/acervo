@@ -33,7 +33,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Native HTTPS interception plus a bounded, cancellable fetch stream for request bodies. */
-public final class SecureWebClient {
+public final class SecureWebClient implements WebTransport {
     private static final String CSP = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' https: data: blob:; media-src 'self' blob:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'; worker-src 'none'";
     private final WebView view;
     private final Context context;
@@ -42,6 +42,7 @@ public final class SecureWebClient {
     private final ThreadPoolExecutor workers = new ThreadPoolExecutor(4, 4, 30, TimeUnit.SECONDS, new ArrayBlockingQueue<>(16));
     private final ConcurrentHashMap<Integer, Job> jobs = new ConcurrentHashMap<>();
     private final Set<HttpURLConnection> resources = ConcurrentHashMap.newKeySet();
+    private final Set<InputStream> localResources = ConcurrentHashMap.newKeySet();
     private volatile String documentKey;
     private volatile boolean disposed;
     private volatile String lastFailure;
@@ -75,6 +76,17 @@ public final class SecureWebClient {
         if (request.isForMainFrame()) newDocument();
         HttpURLConnection connection = null;
         try {
+            // The origin and method have already been checked. A saved phone copy
+            // must never open a remote socket, including byte-range/seek requests.
+            WebResourceResponse local = LocalAudio.intercept(context, target, request.getMethod(), request.getRequestHeaders());
+            if (local != null) {
+                final InputStream original = local.getData();
+                localResources.add(original);
+                local.setData(new FilterInputStream(original) {
+                    @Override public void close() throws IOException { try { super.close(); } finally { localResources.remove(original); } }
+                });
+                return local;
+            }
             connection = SecureTransport.open(context, target, origin);
             resources.add(connection);
             connection.setRequestMethod(request.getMethod());
@@ -120,7 +132,12 @@ public final class SecureWebClient {
     }
 
     private boolean active(String key) { return !disposed && key != null && key.equals(documentKey); }
-    private void cancelAll() { for (Job job : jobs.values()) job.cancel(); jobs.clear(); for (HttpURLConnection connection : resources) connection.disconnect(); resources.clear(); }
+    private void cancelAll() {
+        for (Job job : jobs.values()) job.cancel(); jobs.clear();
+        for (HttpURLConnection connection : resources) connection.disconnect(); resources.clear();
+        for (InputStream input : localResources) { try { input.close(); } catch (IOException ignored) { } }
+        localResources.clear();
+    }
     private static String randomKey() { byte[] bytes = new byte[32]; new SecureRandom().nextBytes(bytes); return Base64.encodeToString(bytes, Base64.NO_WRAP | Base64.URL_SAFE | Base64.NO_PADDING); }
     private static int validStatus(int status) { return status >= 100 && status <= 599 ? status : 502; }
     private static String reason(HttpURLConnection connection, int status) { try { String value = connection.getResponseMessage(); return value == null || value.trim().isEmpty() ? "HTTP " + status : value; } catch (IOException ignored) { return "HTTP " + status; } }
@@ -206,6 +223,24 @@ public final class SecureWebClient {
         boolean complete = false;
         try {
             if (!active(job.key) || job.cancelled.get()) return;
+            LocalAudioResponse local = LocalAudio.open(context, target, method, headers);
+            if (local != null) {
+                try (LocalAudioResponse response = local) {
+                    job.localInput = response.body;
+                    if (!active(job.key) || job.cancelled.get()) return;
+                    event(job, "headers", new JSONObject().put("status", response.status).put("statusText", response.reason).put("headers", new JSONObject(response.headers)));
+                    byte[] buffer = new byte[32 * 1024]; int count;
+                    long total = 0, started = System.nanoTime();
+                    while (!"HEAD".equals(method) && (count = response.body.read(buffer)) != -1) {
+                        if (!active(job.key) || job.cancelled.get()) return;
+                        total += count;
+                        if (total > 32L * 1024 * 1024 || System.nanoTime() - started > 120000000000L) throw new IOException("Resposta excedeu o limite seguro.");
+                        event(job, "chunk", new JSONObject().put("data", Base64.encodeToString(buffer, 0, count, Base64.NO_WRAP)));
+                    }
+                    event(job, "end", new JSONObject());
+                } finally { job.localInput = null; }
+                return;
+            }
             connection = SecureTransport.open(context, target, origin);
             job.connection = connection;
             if (job.cancelled.get()) return;
@@ -241,8 +276,11 @@ public final class SecureWebClient {
         finally { if (connection != null && !complete) connection.disconnect(); jobs.remove(job.id, job); }
     }
     private static final class Job {
-        final String key; final int id; final AtomicBoolean cancelled = new AtomicBoolean(); volatile HttpURLConnection connection;
+        final String key; final int id; final AtomicBoolean cancelled = new AtomicBoolean(); volatile HttpURLConnection connection; volatile InputStream localInput;
         Job(String nonce, int identifier) { key = nonce; id = identifier; }
-        void cancel() { cancelled.set(true); HttpURLConnection open = connection; if (open != null) open.disconnect(); }
+        void cancel() {
+            cancelled.set(true); HttpURLConnection open = connection; if (open != null) open.disconnect();
+            InputStream input = localInput; if (input != null) { try { input.close(); } catch (IOException ignored) { } }
+        }
     }
 }

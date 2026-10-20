@@ -99,6 +99,7 @@ button.connect-device:hover { background: #2a2a2a; }
   .topbar-center { grid-column: 1 / -1; grid-row: 2; width: 100%; max-width: none; margin: 0; }
   .home-button { display: none; }
   .topbar-actions { grid-column: 2; grid-row: 1; gap: 4px; }
+  body.native-app .topbar-actions:has(#native-app-options:not([hidden])) .settings-trigger { display: none; }
   .topbar-actions .conn, .profile-avatar { display: none; }
   .topbar .connect-trigger, .topbar-add { display: grid; place-items: center; width: 44px; height: 44px; min-height: 44px; padding: 0; background: transparent; color: #fff; }
   .topbar .connect-trigger.is-connected { color: var(--accent); }

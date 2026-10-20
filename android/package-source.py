@@ -13,6 +13,9 @@ project = android.parent
 version = ET.parse(android / 'app/src/main/AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName')
 output = project / 'releases' / ('acervo-' + version + '-source.zip')
 sources = []
+for name in ['index.html', 'app.js', 'views.js', 'connect.js', 'radio.js', 'explore.js',
+             'styles.css', 'mobile.css', 'icon.svg', 'manifest.webmanifest']:
+    sources.append((project / 'public' / name, 'public/' + name))
 for name in ['app/src', 'tests']:
     for file in (android / name).rglob('*'):
         relative = file.relative_to(android)

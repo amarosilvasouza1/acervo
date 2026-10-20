@@ -32,7 +32,7 @@ function element() {
   };
 }
 
-function browser({ deviceId = 'pc', mobile = false, hash = '', stored = {}, backend, boot = false, readyState = 'loading', scriptOrder = ['app', 'connect', 'radio', 'views'] } = {}) {
+function browser({ deviceId = 'pc', mobile = false, phone = false, hash = '', stored = {}, backend, boot = false, readyState = 'loading', scriptOrder = ['app', 'connect', 'radio', 'views'] } = {}) {
   let now = Date.parse('2026-10-18T18:00:00Z'); let nextTimer = 0; let currentPlayError = null;
   const timers = new Map(); const nodes = new Map(); const streams = []; const calls = []; const storageWrites = [];
   const getNode = id => nodes.get(id) || (nodes.set(id, element()), nodes.get(id));
@@ -69,7 +69,7 @@ function browser({ deviceId = 'pc', mobile = false, hash = '', stored = {}, back
     load() { audio.emit('loadedmetadata'); }
   });
   const globalEvents = element();
-  const window = { location, history, innerWidth: mobile ? 390 : 1280,
+  const window = { location, history, __ACERVO_PHONE__: phone, innerWidth: mobile ? 390 : 1280,
     addEventListener: (...args) => globalEvents.addEventListener(...args), removeEventListener: (...args) => globalEvents.removeEventListener(...args),
     matchMedia: () => ({ matches: mobile, addEventListener() {}, addListener() {} }) };
   const context = vm.createContext({
@@ -109,6 +109,30 @@ function browser({ deviceId = 'pc', mobile = false, hash = '', stored = {}, back
 
 function response(data, status = 200) { return { ok: status >= 200 && status < 300, status, json: async () => plain(data) }; }
 
+test('the bundled phone uses the shared mobile UI and local library without any PC registration or event stream', async () => {
+  const h = browser({ phone: true, mobile: true, boot: true });
+  let connections = 0, options = 0;
+  h.context.window.__acervoOpenConnections = () => connections++;
+  h.context.window.__acervoOpenAppOptions = () => options++;
+  h.context.window.AcervoAndroid = {};
+  h.boot(); await flush();
+  assert.equal(h.AC.state.tracks.length, 2);
+  assert.ok(h.calls.some(call => call.url === '/api/library'));
+  assert.equal(h.calls.some(call => call.url.startsWith('/api/connect/')), false);
+  assert.equal(h.streams.length, 0);
+  assert.equal(h.getNode('native-app-options').hidden, false);
+  assert.equal(h.AC.isRemotePlayback(), false);
+  await h.AC.play('one');
+  assert.equal(h.audio.src, '/api/stream/one');
+  h.AC.openExpandedPlayer();
+  assert.match(h.getNode('modal-root').innerHTML, /now-playing-scroll/);
+  assert.equal(h.getNode('expanded-device').textContent, 'Ouvindo neste celular');
+  h.AC.openDevices();
+  assert.equal(connections, 1);
+  h.AC.handleAction('app-options', { getAttribute() { return null; } });
+  assert.equal(options, 1);
+});
+
 test('expanded player shows the actual next track, escapes artist details and ignores late profile responses', async () => {
   const h = browser();
   h.AC.state.current = plain(tracks[0]); h.AC.state.queue = ['one', 'two']; h.AC.state.qi = 0;
@@ -139,6 +163,41 @@ test('remote queue edits are applied on the output without playing or seeking th
   assert.deepEqual(plain(pc.AC.state.queue), ['one']);
   assert.equal(pc.audioCalls.filter(call => call.type === 'play').length, before);
   assert.equal(pc.AC.state.current.id, 'one');
+});
+test('expanded player uses the decoded phone duration for progress, preview and seek when its local encoding differs', () => {
+  const h = browser();
+  h.AC.state.current = plain(tracks[0]);
+  h.audio.duration = 238.8; h.audio.currentTime = 119.4;
+  h.AC.openExpandedPlayer();
+  assert.equal(h.getNode('expanded-duration').textContent, '3:58');
+  assert.equal(h.getNode('expanded-seek').value, '500');
+  h.getNode('expanded-seek').emit('input');
+  assert.equal(h.getNode('expanded-current').textContent, '1:59');
+  h.getNode('expanded-seek').emit('change');
+  assert.equal(h.audio.currentTime, 119.4);
+  assert.equal(h.AC.state.current.duration, 240, 'Shared catalog duration is preserved');
+  h.audio.duration = NaN; h.AC.paintExpandedPlayer();
+  assert.equal(h.getNode('expanded-duration').textContent, '4:00', 'Metadata remains the fallback until the decoder knows the duration');
+});
+test('expanded player uses remote track duration instead of stale local decoder metadata', () => {
+  const h = browser({ deviceId: 'phone' });
+  h.AC.state.current = plain(tracks[0]);
+  Object.assign(h.AC.connect, { ready: true, deviceId: 'phone', playback: { activeDeviceId: 'pc', position: 120, playing: false } });
+  h.audio.duration = 120; h.audio.currentTime = 12;
+  h.AC.openExpandedPlayer();
+  assert.equal(h.getNode('expanded-duration').textContent, '4:00');
+  assert.equal(h.getNode('expanded-seek').value, '500');
+  h.getNode('expanded-seek').emit('input');
+  assert.equal(h.getNode('expanded-current').textContent, '2:00');
+});
+
+test('handoff near the end clamps to the locally decoded file when the saved encoding is shorter', async () => {
+  const h = browser();
+  h.audio.duration = 238.8;
+  await h.AC.restorePlayback({ trackId: 'one', queue: ['one'], qi: 0, position: 239.5, playing: false, volume: .8, repeat: 'off' });
+  h.audio.emit('loadedmetadata');
+  assert.ok(h.audio.currentTime < h.audio.duration);
+  assert.equal(h.audio.currentTime, 238.8 - .1);
 });
 const playback = overrides => ({ activeDeviceId: 'pc', trackId: 'one', queue: ['one', 'two'], qi: 0, playing: false, position: 37, volume: .85, shuffle: false, repeat: 'off', updatedAt: '2026-10-18T18:00:00Z', revision: 1, ...overrides });
 const device = (id, local = id === 'pc') => ({ id, name: id === 'pc' ? 'Meu computador' : 'Meu celular', kind: local ? 'desktop' : 'mobile', local, online: true, lastSeenAt: '2026-10-18T18:00:00Z' });

@@ -148,3 +148,13 @@ test('web clients without the confirmation interface keep working', () => {
   assert.doesNotThrow(() => f.win.__acervoConnectionReady());
   assert.equal(f.confirmed.length, 0);
 });
+
+test('app navigation and update actions carry only the active document capability and require the top frame', () => {
+  const f = fixture(), actions = [];
+  for (const name of ['openConnections', 'appOptions', 'appUpdate']) f.win.AcervoAndroid[name] = (...args) => actions.push([name, ...args]);
+  f.win.__acervoOpenConnections(); f.win.__acervoOpenAppOptions(); f.win.__acervoUpdateApp();
+  assert.deepEqual(actions, [['openConnections', 'fixture-document-key'], ['appOptions', 'fixture-document-key'], ['appUpdate', 'fixture-document-key']]);
+  f.win.top = {};
+  f.win.__acervoOpenConnections(); f.win.__acervoUpdateApp();
+  assert.equal(actions.length, 3);
+});

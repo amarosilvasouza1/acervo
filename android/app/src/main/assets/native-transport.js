@@ -3,6 +3,14 @@
   var bridge = window.AcervoSecure;
   var key = '__ACERVO_DOCUMENT_NONCE__';
   if (!bridge || typeof window.fetch !== 'function' || window.top !== window) return;
+  function nativeAction(name) {
+    if (window.top === window && window.AcervoAndroid && typeof window.AcervoAndroid[name] === 'function') {
+      window.AcervoAndroid[name](key);
+    }
+  }
+  window.__acervoOpenConnections = function () { nativeAction('openConnections'); };
+  window.__acervoOpenAppOptions = function () { nativeAction('appOptions'); };
+  window.__acervoUpdateApp = function () { nativeAction('appUpdate'); };
   window.__acervoConnectionReady = function () {
     if (window.top === window && window.AcervoAndroid && window.AcervoAndroid.connectedConfirmed) {
       window.AcervoAndroid.connectedConfirmed(location.origin, key);

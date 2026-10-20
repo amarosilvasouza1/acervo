@@ -694,7 +694,12 @@
     // A handoff continues the same listening session instead of counting a new play.
     audio.dataset.listenedSource = audio.src;
     var expectedSource = audio.src;
-    function seek() { if (audio.src === expectedSource) { try { audio.currentTime = target; } catch (err) {} } }
+    function seek() {
+      if (audio.src !== expectedSource) return;
+      var decoded = Number(audio.duration);
+      var position = Number.isFinite(decoded) && decoded > 0 ? Math.min(target, Math.max(0, decoded - 0.1)) : target;
+      try { audio.currentTime = position; } catch (err) {}
+    }
     audio.addEventListener('loadedmetadata', seek, { once: true });
     seek(); AC.paintPlayback();
     if (AC.onTrackChange) AC.onTrackChange(track);

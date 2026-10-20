@@ -215,6 +215,7 @@
   }
 
   AC.initConnect = function () {
+    if (window.__ACERVO_PHONE__ === true) return Promise.resolve(true);
     if (initialized) return initialized;
     initialized = (async function () {
       var hash = new URLSearchParams(location.hash.replace(/^#/, ''));
@@ -454,6 +455,7 @@
     paintDevices(); AC.paintExpandedPlayer();
   }
   AC.openDevices = function () {
+    if (window.__ACERVO_PHONE__ === true && window.__acervoOpenConnections) { window.__acervoOpenConnections(); return; }
     if (!C.ready) { showPairingRequired(connectionPrompt()); return; }
     C.dialog = 'devices';
     endpointSignature = null;
@@ -500,6 +502,10 @@
     } catch (err) { input.focus(); input.select(); AC.toast('Selecione e copie o link mostrado.'); }
   }
 
+  function expandedDuration() {
+    var decoded = Number(audio.duration);
+    return !AC.isRemotePlayback() && isFinite(decoded) && decoded > 0 ? decoded : (Number(S.current && S.current.duration) || 0);
+  }
   AC.openExpandedPlayer = function () {
     if (!S.current) { AC.toast('Escolha uma música para ouvir.'); return; }
     C.dialog = 'player';
@@ -516,7 +522,7 @@
       '<section class="now-playing-next"><div class="section-head"><h3>A seguir</h3><button class="link" data-action="queue">Ver fila</button></div><div id="expanded-next"></div></section>' +
       '<button class="now-playing-radio-card" id="expanded-radio" data-action="start-radio"><span>' + icon('radio', 24) + '</span><strong>Continue descobrindo</strong><small>Inicie uma rádio a partir desta música</small>' + icon('arrow', 16) + '</button></aside></div>', 'modal now-playing-modal');
     var seek = $('expanded-seek');
-    seek.addEventListener('input', function () { seek.dataset.dragging = '1'; var time = $('expanded-current'); if (time) time.textContent = AC.fmtTime(Number(seek.value) / 1000 * S.current.duration); });
+    seek.addEventListener('input', function () { seek.dataset.dragging = '1'; var time = $('expanded-current'); if (time) time.textContent = AC.fmtTime(Number(seek.value) / 1000 * expandedDuration()); });
     seek.addEventListener('change', function () { AC.seekRatio(Number(seek.value) / 1000); delete seek.dataset.dragging; });
     AC.paintExpandedPlayer();
   };
@@ -571,11 +577,12 @@
       });
     }
     var cur = AC.isRemotePlayback() ? AC.remotePosition() : audio.currentTime || 0;
-    var seek = $('expanded-seek'); if (seek && !seek.dataset.dragging) seek.value = String(Math.round(cur / Math.max(1, track.duration) * 1000));
+    var total = expandedDuration();
+    var seek = $('expanded-seek'); if (seek && !seek.dataset.dragging) seek.value = String(Math.round(Math.max(0, Math.min(1, cur / Math.max(1, total))) * 1000));
     var current = $('expanded-current'); if (current && (!seek || !seek.dataset.dragging)) current.textContent = AC.fmtTime(cur);
-    var duration = $('expanded-duration'); if (duration) duration.textContent = AC.fmtTime(track.duration);
+    var duration = $('expanded-duration'); if (duration) duration.textContent = AC.fmtTime(total);
     var toggle = $('expanded-toggle'); if (toggle) { toggle.innerHTML = icon(S.playing ? 'pause' : 'play', 26); toggle.setAttribute('aria-label', S.playing ? 'Pausar' : 'Tocar'); }
-    var output = $('expanded-device'); if (output) output.textContent = C.ready ? (activeHere() ? 'Ouvindo neste dispositivo' : 'Ouvindo em ' + activeName()) : 'Escolher dispositivo';
+    var output = $('expanded-device'); if (output) output.textContent = window.__ACERVO_PHONE__ === true ? 'Ouvindo neste celular' : C.ready ? (activeHere() ? 'Ouvindo neste dispositivo' : 'Ouvindo em ' + activeName()) : 'Escolher dispositivo';
   };
   AC.onPlaybackBlocked = function () { C.needsGesture = true; paintConnection(); AC.toast('Toque em play neste dispositivo para continuar a música.'); };
   AC.onModalClose = function () { C.dialog = null; };
