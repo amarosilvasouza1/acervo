@@ -58,6 +58,24 @@ Na biblioteca e nos cartões, clicar no nome ou na capa da música inicia a repr
 
 Músicas já salvas tocam diretamente. Recomendações do YouTube podem ser adicionadas e reproduzidas; álbuns e faixas apenas do catálogo abrem a busca para você escolher uma versão. O botão **Atualizar** repete a consulta; novas reproduções atualizam Recentes. `npm test` verifica os serviços e a interface, e `npm run test:catalog` verifica as rotas em uma biblioteca temporária.
 
+## MCP para IAs
+
+O Acervo expõe um servidor MCP local para agentes de IA pesquisarem, criarem playlists e controlarem a reprodução da versão Web (play, pause, next, previous, seek). As ferramentas usam a API local e os comandos são executados pela aba Web aberta em `http://127.0.0.1:4310`.
+
+```json
+{
+  "mcpServers": {
+    "acervo": {
+      "command": "node",
+      "args": ["C:\\caminho\\para\\acervo\\mcp\\acervo-mcp.mjs"],
+      "env": { "ACERVO_URL": "http://127.0.0.1:4310" }
+    }
+  }
+}
+```
+
+Os endpoints `/api/mcp/*` aceitam somente host local e não são expostos pelo relay público. Veja [mcp/README.md](mcp/README.md) para as ferramentas e limitações.
+
 ## Novidades 1.6.0
 
 - O APK usa os mesmos arquivos da web mobile também no modo independente e offline. Biblioteca, busca, artistas, fila e player compartilham a interface; os arquivos da tela ficam no APK e abrem sem o PC.

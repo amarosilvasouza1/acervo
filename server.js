@@ -84,6 +84,45 @@ const MIME = {
 };
 
 const jobs = new Map();
+const mcpPending = [];
+let mcpPlayerState = null;
+function mcpLocalRequest(req) {
+  const raw = String(req.headers.host || '').toLowerCase();
+  const host = raw.replace(/^\[|\]$/g, '').replace(/:\d+$/, '');
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1';
+}
+function mcpString(value, max) {
+  return typeof value === 'string' ? value.trim().slice(0, max) : '';
+}
+function mcpCommandFromInput(input) {
+  const action = mcpString(input && input.action, 20);
+  if (!['play', 'pause', 'resume', 'stop', 'next', 'previous', 'seek'].includes(action)) {
+    const error = new Error('Ação MCP inválida.');
+    error.statusCode = 400;
+    throw error;
+  }
+  const command = { id: crypto.randomUUID(), action, createdAt: new Date().toISOString() };
+  if (action === 'play') {
+    const trackId = mcpString(input.trackId, 200);
+    if (!trackId) { const error = new Error('Informe trackId para tocar.'); error.statusCode = 400; throw error; }
+    const rawQueue = Array.isArray(input.queue) ? input.queue : [trackId];
+    const queue = [];
+    for (const value of rawQueue) {
+      const id = mcpString(value, 200);
+      if (id && !queue.includes(id)) queue.push(id);
+      if (queue.length >= 100) break;
+    }
+    if (!queue.includes(trackId)) queue.unshift(trackId);
+    command.trackId = trackId;
+    command.queue = queue;
+    command.qi = Math.max(0, Math.min(queue.length - 1, Number.isInteger(input.qi) ? input.qi : queue.indexOf(trackId)));
+  }
+  if (action === 'seek') {
+    command.position = Math.max(0, Math.min(86400, Number(input.position) || 0));
+  }
+  return command;
+}
+
 const jobWaiters = new Map();
 const queue = [];
 const DOWNLOAD_CONCURRENCY = Math.max(1, Math.min(3, Math.floor(Number(process.env.ACERVO_DOWNLOAD_CONCURRENCY) || 2)));
@@ -536,6 +575,55 @@ async function handleRequest(req, res) {
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff'
       });
+    }
+    if (pathname.startsWith('/api/mcp/')) {
+      if (!mcpLocalRequest(req)) return sendJson(res, 403, { error: 'MCP disponível apenas no host local.' });
+      if (req.method === 'GET' && pathname === '/api/mcp/status') {
+        return sendJson(res, 200, { pending: mcpPending.length, first: mcpPending[0] ? mcpPending[0].action : null, player: mcpPlayerState });
+      }
+      if (req.method === 'POST' && pathname === '/api/mcp/state') {
+        try {
+          const input = await readBody(req);
+          mcpPlayerState = {
+            playing: !!input.playing,
+            trackId: mcpString(input.trackId, 200) || null,
+            position: Math.max(0, Math.min(86400, Number(input.position) || 0)),
+            duration: Math.max(0, Math.min(86400, Number(input.duration) || 0)),
+            queue: Math.max(0, Math.min(100, Number(input.queue) || 0)),
+            qi: Math.max(-1, Math.min(100, Number(input.qi) || 0)),
+            updatedAt: new Date().toISOString()
+          };
+          return sendJson(res, 200, { ok: true });
+        } catch (error) {
+          return sendJson(res, 400, { error: String(error.message || error) });
+        }
+      }
+      if (req.method === 'GET' && pathname === '/api/mcp/command') {
+        return sendJson(res, 200, { command: mcpPending[0] || null, pending: mcpPending.length });
+      }
+      if (req.method === 'POST' && pathname === '/api/mcp/command') {
+        try {
+          const input = await readBody(req);
+          if (mcpPending.length >= 25) return sendJson(res, 429, { error: 'Muitos comandos MCP pendentes. Abra a aba Web do Acervo.' });
+          const command = mcpCommandFromInput(input);
+          mcpPending.push(command);
+          return sendJson(res, 202, { command, pending: mcpPending.length });
+        } catch (error) {
+          return sendJson(res, error.statusCode || 400, { error: String(error.message || error) });
+        }
+      }
+      if (req.method === 'POST' && pathname === '/api/mcp/ack') {
+        try {
+          const input = await readBody(req);
+          const id = mcpString(input && input.id, 100);
+          const index = mcpPending.findIndex((command) => command.id === id);
+          if (index >= 0) mcpPending.splice(index, 1);
+          return sendJson(res, 200, { ok: true, removed: index >= 0, pending: mcpPending.length });
+        } catch (error) {
+          return sendJson(res, 400, { error: String(error.message || error) });
+        }
+      }
+      return sendJson(res, 404, { error: 'Rota MCP não encontrada.' });
     }
     if (req.method === 'GET' && pathname === '/api/health') {
       const all = await Library.all();
