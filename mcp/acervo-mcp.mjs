@@ -49,6 +49,16 @@ export const TOOLS = [
     }
   },
   {
+    name: 'acervo_phone_control',
+    description: 'Controla o aparelho ativo (celular): pause, resume, toggle, next, previous ou seek.',
+    inputSchema: {
+      type: 'object', properties: {
+        action: { type: 'string', enum: ['pause', 'resume', 'toggle', 'next', 'previous', 'seek'] },
+        position: { type: 'number', minimum: 0, maximum: 86400 }
+      }, required: ['action'], additionalProperties: false
+    }
+  },
+  {
     name: 'acervo_control',
     description: 'Controla o player da aba Web: pause, resume, stop, next, previous ou seek.',
     inputSchema: {
@@ -183,6 +193,14 @@ export async function callTool(name, args, client = createClient()) {
         library: (library.tracks || []).length,
         playlists: (playlists.playlists || []).length,
         pendingCommands: mcp.pending || 0,
+        device: {
+          name: ((info.devices || []).find((device) => device.id === (info.playback || {}).activeDeviceId) || {}).name || null,
+          activeDeviceId: (info.playback || {}).activeDeviceId || null,
+          playing: !!((info.playback || {}).playing),
+          trackId: (info.playback || {}).trackId || null,
+          position: (info.playback || {}).position || 0,
+          queue: Array.isArray((info.playback || {}).queue) ? info.playback.queue.length : 0
+        },
         source: mcp.player ? 'web' : 'connect',
         updatedAt: playback.updatedAt || null,
         hint: 'Para tocar, mantenha a aba Web do Acervo aberta em http://127.0.0.1:4310.'
@@ -239,6 +257,25 @@ export async function callTool(name, args, client = createClient()) {
       if (!ids.length) throw new Error('Nenhuma faixa disponível para tocar no celular.');
       const result = await client.post('/api/mcp/device', { type: 'play', args: { trackId: ids[0], queue: ids, qi: 0 } });
       return textResult({ message: 'Play enviado ao aparelho ativo.', target: label, tracks: ids.length, command: result.command });
+    }
+
+    if (name === 'acervo_phone_control') {
+      const action = String(args.action || '');
+      const info = await client.get('/api/connect/info');
+      const playing = !!(info.playback && info.playback.playing);
+      let type = action;
+      if (action === 'resume') {
+        if (playing) return textResult({ message: 'O celular já está tocando.', action });
+        type = 'toggle';
+      } else if (action === 'pause') {
+        if (!playing) return textResult({ message: 'O celular já está pausado.', action });
+        type = 'toggle';
+      }
+      if (!['pause', 'resume', 'toggle', 'next', 'previous', 'seek'].includes(action)) throw new Error('Ação inválida.');
+      const body = { type, args: {} };
+      if (type === 'seek') body.args.position = Math.max(0, Math.min(86400, Number(args.position) || 0));
+      const result = await client.post('/api/mcp/device', body);
+      return textResult({ message: 'Comando enviado ao celular.', action, result });
     }
 
     if (name === 'acervo_control') {
