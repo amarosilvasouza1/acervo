@@ -201,6 +201,7 @@ export async function callTool(name, args, client = createClient()) {
           position: (info.playback || {}).position || 0,
           queue: Array.isArray((info.playback || {}).queue) ? info.playback.queue.length : 0
         },
+        lastAck: (info.diagnostics || {}).lastAck || null,
         source: mcp.player ? 'web' : 'connect',
         updatedAt: playback.updatedAt || null,
         hint: 'Para tocar, mantenha a aba Web do Acervo aberta em http://127.0.0.1:4310.'

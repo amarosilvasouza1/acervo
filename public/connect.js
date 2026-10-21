@@ -127,13 +127,18 @@
   };
 
   async function applyCommand(command) {
-    if (!command || command.targetDeviceId !== C.deviceId || seenCommands.has(command.id)) return;
+    var applied = await applyCommandInner(command);
+    if (applied) api('/api/connect/command-ack', { id: command.id }).catch(function () {});
+    return applied;
+  }
+  async function applyCommandInner(command) {
+    if (!command || command.targetDeviceId !== C.deviceId || seenCommands.has(command.id)) return false;
     seenCommands.add(command.id);
     if (seenCommands.size > 250) seenCommands.delete(seenCommands.values().next().value);
     // The preceding state event owns a handoff. Do not restart it a second time.
-    if (command.type === 'transfer' || !activeHere()) return;
+    if (command.type === 'transfer' || !activeHere()) return false;
     await restoring;
-    if (!activeHere()) return;
+    if (!activeHere()) return false;
     C.applying = true;
     try {
       var args = command.args || {};
@@ -151,11 +156,12 @@
       else if (command.type === 'shuffle') { S.shuffle = args.shuffle; }
       else if (command.type === 'repeat') { S.repeat = args.repeat; }
       else if (command.type === 'queue') {
-        if (S.current && args.queue[args.qi] !== S.current.id) return;
+        if (S.current && args.queue[args.qi] !== S.current.id) return false;
         AC.setPlaybackQueue(args.queue, args.qi);
       }
       AC.paintPlayback();
     } finally { C.applying = false; AC.notifyPlayback(true); }
+    return true;
   }
 
   function acceptSnapshot(snapshot) {
