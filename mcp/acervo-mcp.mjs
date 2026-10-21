@@ -236,7 +236,7 @@ export async function callTool(name, args, client = createClient()) {
     if (name === 'acervo_play_playlist') {
       const playlist = ((await client.get('/api/playlists')).playlists || []).find((item) => item.id === args.playlistId);
       if (!playlist) throw new Error('Playlist não encontrada.');
-      const ids = playlist.entries.map((entry) => entry.trackId).filter(Boolean);
+      const ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter(Boolean);
       if (!ids.length) throw new Error('Essa playlist ainda não tem músicas baixadas.');
       const command = await client.post('/api/mcp/command', { action: 'play', trackId: ids[0], queue: ids, qi: 0 });
       return textResult({ message: 'Playlist enviada para a aba Web.', playlist: playlist.name, tracks: ids.length, command: command.command });
