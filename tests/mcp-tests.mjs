@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handleMessage, callTool, TOOLS } from '../mcp/acervo-mcp.mjs';
+import { handleMessage, callTool, TOOLS, RESOURCES } from '../mcp/acervo-mcp.mjs';
 
 function mockClient(routes = {}) {
   const calls = [];
@@ -10,7 +10,7 @@ function mockClient(routes = {}) {
       calls.push(['GET', path]);
       if (routes.get) return routes.get(path);
       if (path === '/api/library') return { tracks: [{ id: 'abc', title: 'Something About Us', artist: 'Daft Punk', duration: 229 }] };
-      if (path.startsWith('/api/search')) return { results: [{ videoId: 'vid1', title: 'Daft Punk - Something About Us', channel: 'Daft Punk', duration: 229 }] };
+      if (path.startsWith('/api/search')) return { results: [{ videoId: 'vid1', title: 'Daft Punk - Something About Us', channel: 'Daft Punk', duration: 229, url: 'https://www.youtube.com/watch?v=vid1' }] };
       if (path === '/api/connect/info') return { playback: { playing: false, queue: [] }, devices: [] };
       if (path === '/api/playlists') return { playlists: [] };
       if (path === '/api/mcp/status') return { pending: 0 };
@@ -32,6 +32,7 @@ test('MCP initialize responde protocolo e capabilities', async () => {
   assert.equal(response.result.protocolVersion, '2025-06-18');
   assert.equal(response.result.serverInfo.name, 'acervo');
   assert.equal(response.result.capabilities.tools.listChanged, false);
+  assert.ok(response.result.capabilities.resources);
 });
 
 test('MCP tools/list expõe as ferramentas de controle', async () => {
@@ -70,7 +71,29 @@ test('MCP ferramenta desconhecida retorna erro de ferramenta', async () => {
   assert.equal(result.isError, true);
 });
 
+test('MCP lista e lê recursos de contexto', async () => {
+  const list = await handleMessage({ jsonrpc: '2.0', id: 9, method: 'resources/list' }, mockClient());
+  assert.equal(list.result.resources.length, RESOURCES.length);
+  const read = await handleMessage({ jsonrpc: '2.0', id: 10, method: 'resources/read', params: { uri: 'acervo://library' } }, mockClient());
+  assert.match(read.result.contents[0].text, /Something About Us/);
+});
+
+test('MCP baixa por busca sem exigir URL', async () => {
+  const client = mockClient();
+  const result = await callTool('acervo_download', { query: 'daft punk' }, client);
+  assert.equal(result.isError, undefined);
+  const call = client.calls.find((entry) => entry[1] === '/api/import');
+  assert.equal(call[2].url, 'https://www.youtube.com/watch?v=vid1');
+});
+
+test('MCP pesquisa e baixa em uma chamada', async () => {
+  const client = mockClient();
+  const result = await callTool('acervo_search_download', { query: 'daft punk' }, client);
+  assert.equal(result.isError, undefined);
+  assert.match(result.content[0].text, /job-1/);
+});
+
 test('MCP método desconhecido retorna JSON-RPC -32601', async () => {
-  const response = await handleMessage({ jsonrpc: '2.0', id: 9, method: 'resources/list' }, mockClient());
+  const response = await handleMessage({ jsonrpc: '2.0', id: 11, method: 'unknown/method' }, mockClient());
   assert.equal(response.error.code, -32601);
 });

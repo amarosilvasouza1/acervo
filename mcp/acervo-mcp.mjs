@@ -107,10 +107,25 @@ export const TOOLS = [
   },
   {
     name: 'acervo_download',
-    description: 'Baixa uma música do YouTube para o acervo. Retorna o jobId para acompanhar.',
+    description: 'Baixa uma música do YouTube por URL, videoId ou busca. Retorna o jobId para acompanhar.',
     inputSchema: {
-      type: 'object', properties: { url: { type: 'string' } }, required: ['url'], additionalProperties: false
+      type: 'object', properties: {
+        url: { type: 'string' }, videoId: { type: 'string' }, query: { type: 'string' }
+      }, additionalProperties: false
     }
+  },
+  {
+    name: 'acervo_search_download',
+    description: 'Pesquisa no YouTube e baixa o primeiro resultado em uma só chamada.',
+    inputSchema: {
+      type: 'object', properties: { query: { type: 'string' }, limit: { type: 'integer', minimum: 1, maximum: 5 } },
+      required: ['query'], additionalProperties: false
+    }
+  },
+  {
+    name: 'acervo_queue',
+    description: 'Mostra a fila atual do aparelho ativo com títulos, posição e faixa atual.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false }
   },
   {
     name: 'acervo_job',
@@ -119,6 +134,12 @@ export const TOOLS = [
       type: 'object', properties: { jobId: { type: 'string' } }, required: ['jobId'], additionalProperties: false
     }
   }
+];
+
+export const RESOURCES = [
+  { uri: 'acervo://now-playing', name: 'Tocando agora', description: 'Faixa, fila e estado do aparelho ativo.', mimeType: 'application/json' },
+  { uri: 'acervo://playlists', name: 'Playlists', description: 'Playlists salvas e progresso das faixas.', mimeType: 'application/json' },
+  { uri: 'acervo://library', name: 'Biblioteca', description: 'Músicas baixadas no acervo.', mimeType: 'application/json' }
 ];
 
 export function createClient(baseUrl = DEFAULT_URL, fetchImpl = fetch, token = TOKEN) {
@@ -327,9 +348,47 @@ export async function callTool(name, args, client = createClient()) {
     }
 
     if (name === 'acervo_download') {
-      const url = String(args.url || '').trim();
-      if (!url) throw new Error('Informe a URL do YouTube.');
-      return textResult(await client.post('/api/import', { url }));
+      let url = String(args.url || '').trim();
+      let chosen = null;
+      if (!url && args.videoId) url = 'https://www.youtube.com/watch?v=' + encodeURIComponent(String(args.videoId));
+      if (!url && args.query) {
+        const found = await client.get('/api/search?q=' + encodeURIComponent(String(args.query)));
+        chosen = (found.results || [])[0] || null;
+        if (!chosen) throw new Error('Nenhum resultado encontrado para baixar.');
+        url = chosen.url;
+      }
+      if (!url) throw new Error('Informe url, videoId ou query.');
+      const job = await client.post('/api/import', { url });
+      return textResult({ message: 'Download iniciado.', chosen, job });
+    }
+
+    if (name === 'acervo_search_download') {
+      const query = String(args.query || '').trim();
+      if (!query) throw new Error('Informe uma busca.');
+      const found = await client.get('/api/search?q=' + encodeURIComponent(query));
+      const limit = Math.max(1, Math.min(5, Number(args.limit) || 3));
+      const candidates = (found.results || []).slice(0, limit);
+      const chosen = candidates[0];
+      if (!chosen) throw new Error('Nenhum resultado encontrado.');
+      const job = await client.post('/api/import', { url: chosen.url });
+      return textResult({ message: 'Pesquisa e download iniciados.', chosen, candidates, job });
+    }
+
+    if (name === 'acervo_queue') {
+      const [info, library] = await Promise.all([client.get('/api/connect/info'), client.get('/api/library')]);
+      const playback = info.playback || {};
+      const byId = new Map((library.tracks || []).map((track) => [track.id, track]));
+      const device = (info.devices || []).find((item) => item.id === playback.activeDeviceId) || null;
+      return textResult({
+        device: device ? { name: device.name, online: device.online } : null,
+        playing: !!playback.playing,
+        currentIndex: playback.qi,
+        current: playback.trackId ? (byId.get(playback.trackId) || { id: playback.trackId }) : null,
+        queue: (playback.queue || []).map((id, index) => {
+          const track = byId.get(id) || {};
+          return { index, id, title: track.title || id, artist: track.artist || '' };
+        })
+      });
     }
 
     if (name === 'acervo_job') {
@@ -344,6 +403,22 @@ export async function callTool(name, args, client = createClient()) {
   }
 }
 
+
+async function readResource(uri, client) {
+  if (uri === 'acervo://now-playing') {
+    const info = await client.get('/api/connect/info');
+    return { uri, mimeType: 'application/json', text: JSON.stringify({ playback: info.playback, devices: info.devices, diagnostics: info.diagnostics }, null, 2) };
+  }
+  if (uri === 'acervo://playlists') {
+    const result = await client.get('/api/playlists');
+    return { uri, mimeType: 'application/json', text: JSON.stringify((result.playlists || []).map((playlist) => ({ id: playlist.id, name: playlist.name, total: playlist.entries.length, done: playlist.entries.filter((entry) => entry.trackId || entry.videoId).length })), null, 2) };
+  }
+  if (uri === 'acervo://library') {
+    const result = await client.get('/api/library');
+    return { uri, mimeType: 'application/json', text: JSON.stringify((result.tracks || []).slice(0, 100).map((track) => ({ id: track.id, title: track.title, artist: track.artist, duration: track.duration })), null, 2) };
+  }
+  throw new Error('Recurso desconhecido: ' + uri);
+}
 function rpcError(id, code, message) {
   return { jsonrpc: '2.0', id: id === undefined ? null : id, error: { code, message } };
 }
@@ -360,14 +435,21 @@ export async function handleMessage(message, client = createClient()) {
       jsonrpc: '2.0', id,
       result: {
         protocolVersion: PROTOCOLS.has(requested) ? requested : '2025-06-18',
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, resources: { listChanged: false, subscribe: false } },
         serverInfo: { name: 'acervo', version: VERSION },
-        instructions: 'Controle o Acervo pela aba Web aberta. Use acervo_search/acervo_library antes de tocar; acervo_play e acervo_control enviam comandos para a página.'
+        instructions: 'Controle o Acervo e o celular conectado. Use acervo_search, acervo_download/acervo_job, acervo_play_phone, acervo_phone_control e acervo_status. Leia acervo://now-playing, acervo://playlists e acervo://library para contexto.'
       }
     };
   }
   if (message.method === 'ping') return { jsonrpc: '2.0', id, result: {} };
   if (message.method === 'tools/list') return { jsonrpc: '2.0', id, result: { tools: TOOLS } };
+  if (message.method === 'resources/list') return { jsonrpc: '2.0', id, result: { resources: RESOURCES } };
+  if (message.method === 'resources/read') {
+    const uri = message.params && message.params.uri;
+    if (!uri) return rpcError(id, -32602, 'URI do recurso ausente.');
+    try { return { jsonrpc: '2.0', id, result: { contents: [await readResource(uri, client)] } }; }
+    catch (error) { return rpcError(id, -32602, error.message || String(error)); }
+  }
   if (message.method === 'tools/call') {
     const params = message.params || {};
     if (!params.name || typeof params.name !== 'string') return rpcError(id, -32602, 'Nome da ferramenta ausente.');

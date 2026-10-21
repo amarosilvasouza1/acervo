@@ -34,14 +34,26 @@ Use o mesmo bloco em `claude_desktop_config.json` e reinicie o aplicativo.
 - `acervo_status` — tocando agora, fila, aparelhos e pendências.
 - `acervo_search` — busca no YouTube.
 - `acervo_library` — músicas baixadas.
-- `acervo_play` — toca uma faixa por `trackId` ou busca.
+- `acervo_play` — toca uma faixa por `trackId` ou busca na aba Web.
+- `acervo_play_phone` — envia faixa ou playlist para o celular ativo.
+- `acervo_phone_control` — pause, resume, next, previous, seek e toggle no celular.
 - `acervo_control` — pause, resume, stop, next, previous, seek.
 - `acervo_playlists` — lista playlists.
 - `acervo_play_playlist` — toca uma playlist baixada.
 - `acervo_create_playlist` — cria playlist com faixas.
 - `acervo_import_playlist` — importa playlist/faixa do Spotify ou YouTube.
-- `acervo_download` — baixa uma música do YouTube.
+- `acervo_download` — baixa por URL, `videoId` ou busca.
+- `acervo_search_download` — pesquisa e baixa o primeiro resultado em uma chamada.
+- `acervo_queue` — mostra a fila do aparelho com títulos e posição.
 - `acervo_job` — acompanha um download.
+
+## Recursos de contexto
+
+O MCP também expõe recursos para o cliente anexar contexto sem gastar uma chamada de ferramenta:
+
+- `acervo://now-playing` — aparelho ativo, faixa, fila, posição e diagnóstico.
+- `acervo://playlists` — playlists e progresso.
+- `acervo://library` — músicas baixadas.
 
 ## Exemplo de conversa
 
@@ -52,5 +64,5 @@ O agente chama `acervo_search`, `acervo_download`, espera o `acervo_job`, cria a
 ## Limitações
 
 - O navegador pode exigir uma interação do usuário antes de liberar áudio; depois disso os comandos seguem normalmente.
-- O MCP controla a **aba Web**; não controla o app Android em segundo plano.
+- O MCP controla a **aba Web** e o **celular conectado**; o celular precisa estar com o app ativo e conectado.
 - Os arquivos e a biblioteca continuam no PC.
