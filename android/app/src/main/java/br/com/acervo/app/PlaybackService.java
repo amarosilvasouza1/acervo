@@ -32,6 +32,9 @@ public final class PlaybackService extends Service {
         default long positionMs() { return 0; }
         default long durationMs() { return 0; }
         default void onSeek(long positionMs) { }
+
+        /** Called periodically so the WebView can fetch remote commands while minimized. */
+        default void pollRemote() { }
     }
 
     static final String ACTION_UPDATE = "br.com.acervo.app.PLAYBACK_UPDATE";
@@ -55,6 +58,14 @@ public final class PlaybackService extends Service {
     private WifiManager.WifiLock wifi;
     private static Bitmap artwork;
     private final Handler ticker = new Handler(Looper.getMainLooper());
+    private final Handler remoteTicker = new Handler(Looper.getMainLooper());
+    private final Runnable remoteTick = new Runnable() {
+        @Override public void run() {
+            if (instance != PlaybackService.this) return;
+            if (controls != null) controls.pollRemote();
+            remoteTicker.postDelayed(this, 2500);
+        }
+    };
     private final Runnable tick = new Runnable() {
         @Override public void run() {
             if (!playing || instance != PlaybackService.this) return;
@@ -130,6 +141,7 @@ public final class PlaybackService extends Service {
             @Override public void onStop() { if (controls != null) controls.onClose(); }
         });
         session.setActive(true);
+        remoteTicker.postDelayed(remoteTick, 1500);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -243,7 +255,7 @@ public final class PlaybackService extends Service {
         else builder.setLargeIcon(Icon.createWithResource(this, R.mipmap.ic_launcher));
 
         startForeground(NOTIFICATION_ID, builder.build());
-        if (playing) acquireLocks(); else releaseLocks();
+        acquireLocks();
 
         MediaMetadata.Builder metadata = new MediaMetadata.Builder()
                 .putString(MediaMetadata.METADATA_KEY_TITLE, title.isEmpty() ? "Acervo" : title)
@@ -283,6 +295,7 @@ public final class PlaybackService extends Service {
 
     @Override public void onDestroy() {
         ticker.removeCallbacks(tick);
+        remoteTicker.removeCallbacks(remoteTick);
         if (instance == this) instance = null;
         releaseLocks();
         if (session != null) { session.setActive(false); session.release(); session = null; }

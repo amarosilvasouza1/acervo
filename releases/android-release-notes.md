@@ -1,3 +1,9 @@
+# Acervo 1.6.1
+
+- Comandos em segundo plano: o serviço consulta o servidor e acorda o WebView a cada 2,5 s.
+- Mantém CPU/Wi-Fi ativos enquanto o serviço de reprodução estiver ativo.
+- Playlist no celular usa somente faixas baixadas.
+
 Acervo Android 1.6.0
 
 - Mesma interface da web mobile nos modos conectado, independente e offline: biblioteca, artista, fila e player.

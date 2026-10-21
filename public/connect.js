@@ -164,6 +164,18 @@
     return true;
   }
 
+  window.__acervoPollCommands = function () {
+    if (!C.ready || !C.deviceId) return Promise.resolve();
+    return fetch('/api/connect/commands?deviceId=' + encodeURIComponent(C.deviceId), { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) {
+        (data && data.commands || []).forEach(function (command) {
+          commandQueue = commandQueue.then(function () { return applyCommand(command); }).catch(function () {});
+        });
+      })
+      .catch(function () {});
+  };
+
   function acceptSnapshot(snapshot) {
     var previousPhone = C.security && C.security.pairedDeviceId;
     var previousPhonePin = C.security && C.security.phonePin;

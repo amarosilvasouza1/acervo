@@ -76,6 +76,12 @@ O Acervo expõe um servidor MCP local para agentes de IA pesquisarem, criarem pl
 
 Os endpoints `/api/mcp/*` aceitam somente host local e não são expostos pelo relay público. Veja [mcp/README.md](mcp/README.md) para as ferramentas e limitações.
 
+## Novidades 1.6.1
+
+- O serviço Android consulta comandos pendentes a cada 2,5 s e acorda o WebView, para play/pause/next funcionarem com o app minimizado.
+- O serviço mantém CPU e Wi-Fi acordados enquanto está ativo, evitando que o Android suspenda o canal de comandos.
+- Ao enviar uma playlist ao celular, entram na fila apenas as faixas já baixadas.
+
 ## Novidades 1.6.0
 
 - O APK usa os mesmos arquivos da web mobile também no modo independente e offline. Biblioteca, busca, artistas, fila e player compartilham a interface; os arquivos da tela ficam no APK e abrem sem o PC.
@@ -200,7 +206,7 @@ O endereço fica disponível apenas dentro da sua tailnet — não é publicado 
 
 ## Android independente e conexão entre dispositivos
 
-Instale [releases/acervo-1.6.0.apk](releases/acervo-1.6.0.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** no menu de três pontos para parear outro Acervo.
+Instale [releases/acervo-1.6.1.apk](releases/acervo-1.6.1.apk) no Android 8 ou superior. Pode instalar por cima da versão anterior: a assinatura foi mantida. O botão **Baixar APK Android** em **Conectar dispositivos** também entrega esse arquivo. O APK abre no último modo usado; use **Conexões** no menu de três pontos para parear outro Acervo.
 
 Na tela inicial do APK, toque em **Usar neste celular**. O Android pesquisa no YouTube, resolve o áudio, baixa e reproduz pela própria conexão à internet. Funciona em outra rede e com o computador desligado. As músicas ficam na área privada do aplicativo e tocam sem internet depois de baixadas. A rádio usa uma música escolhida ou a última ouvida para buscar sugestões atuais; nenhuma hospedagem é necessária para esse modo.
 

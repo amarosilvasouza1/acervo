@@ -593,6 +593,10 @@ public final class MainActivity extends Activity implements PlaybackService.Cont
         js("AC.seekRatio(" + ratio + ")");
     }
 
+    @Override public void pollRemote() {
+        if (webView != null) webView.evaluateJavascript("window.__acervoPollCommands&&window.__acervoPollCommands()", null);
+    }
+
     private Bitmap fetchCover(String path) {
         try {
             if (phoneMode) {
