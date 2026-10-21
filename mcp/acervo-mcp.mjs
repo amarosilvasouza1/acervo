@@ -40,6 +40,15 @@ export const TOOLS = [
     }
   },
   {
+    name: 'acervo_play_phone',
+    description: 'Envia uma faixa ou playlist para tocar no aparelho ativo do Acervo, normalmente o celular conectado.',
+    inputSchema: {
+      type: 'object', properties: {
+        playlistId: { type: 'string' }, trackId: { type: 'string' }, query: { type: 'string' }
+      }, additionalProperties: false
+    }
+  },
+  {
     name: 'acervo_control',
     description: 'Controla o player da aba Web: pause, resume, stop, next, previous ou seek.',
     inputSchema: {
@@ -211,6 +220,25 @@ export async function callTool(name, args, client = createClient()) {
       if (!queue.includes(track.id)) queue.unshift(track.id);
       const command = await client.post('/api/mcp/command', { action: 'play', trackId: track.id, queue, qi: queue.indexOf(track.id) });
       return textResult({ message: 'Comando de reprodução enviado para a aba Web.', track: { id: track.id, title: track.title, artist: track.artist }, command: command.command });
+    }
+
+    if (name === 'acervo_play_phone') {
+      let ids = [];
+      let label = '';
+      if (args.playlistId) {
+        const playlist = ((await client.get('/api/playlists')).playlists || []).find((item) => item.id === args.playlistId);
+        if (!playlist) throw new Error('Playlist não encontrada.');
+        ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter(Boolean);
+        label = playlist.name;
+      } else {
+        const track = await resolveTrack(client, args);
+        if (track.searchOnly) throw new Error('A faixa ainda não está no acervo. Baixe primeiro.');
+        ids = [track.id];
+        label = track.title;
+      }
+      if (!ids.length) throw new Error('Nenhuma faixa disponível para tocar no celular.');
+      const result = await client.post('/api/mcp/device', { type: 'play', args: { trackId: ids[0], queue: ids, qi: 0 } });
+      return textResult({ message: 'Play enviado ao aparelho ativo.', target: label, tracks: ids.length, command: result.command });
     }
 
     if (name === 'acervo_control') {

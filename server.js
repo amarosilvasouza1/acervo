@@ -623,6 +623,15 @@ async function handleRequest(req, res) {
           return sendJson(res, 400, { error: String(error.message || error) });
         }
       }
+      if (req.method === 'POST' && pathname === '/api/mcp/device') {
+        try {
+          const input = await readBody(req);
+          const result = await connect.commandActive(input);
+          return sendJson(res, 200, result);
+        } catch (error) {
+          return sendJson(res, error.statusCode || 409, { error: String(error.message || error) });
+        }
+      }
       return sendJson(res, 404, { error: 'Rota MCP não encontrada.' });
     }
     if (req.method === 'GET' && pathname === '/api/health') {
