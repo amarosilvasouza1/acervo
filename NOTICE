@@ -1,0 +1,9 @@
+Acervo
+Copyright 2026 amarosilvasouza1
+
+O código original deste repositório é licenciado sob a Apache License 2.0 (veja LICENSE).
+
+O aplicativo Android inclui NewPipeExtractor, licenciado sob GPL-3.0-or-later.
+Para distribuir o APK, a combinação com esse componente observa a GPL-3.0-or-later.
+Os demais componentes de terceiros mantêm suas próprias licenças; consulte
+THIRD-PARTY-NOTICES.md, LICENSE e android/README.md.

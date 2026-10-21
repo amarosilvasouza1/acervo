@@ -328,3 +328,8 @@ Os testes cobrem resultados progressivos, histórico, referências, repetições
 ## Limites e uso
 
 O download depende do YouTube e pode falhar por verificação anti-bot, região ou disponibilidade do vídeo — a interface mostra o motivo. Baixe apenas conteúdo que você tem direito de usar. O Acervo não contorna DRM, paywall ou controle de acesso; cookies são opcionais e ficam na sua máquina.
+
+## Licença
+
+O código original deste repositório está sob a **Apache License 2.0** (veja LICENSE).
+O APK Android inclui o NewPipeExtractor, licenciado sob **GPL-3.0-or-later**; nessa distribuição, o conjunto observa a GPL-3.0. Veja NOTICE e android/README.md.
