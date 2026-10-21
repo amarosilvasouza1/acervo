@@ -268,7 +268,8 @@ export async function callTool(name, args, client = createClient()) {
       if (args.playlistId) {
         const playlist = ((await client.get('/api/playlists')).playlists || []).find((item) => item.id === args.playlistId);
         if (!playlist) throw new Error('Playlist não encontrada.');
-        ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter(Boolean);
+        const available = new Set(((await client.get('/api/library')).tracks || []).map((track) => track.id));
+        ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter((id) => id && available.has(id));
         label = playlist.name;
       } else {
         const track = await resolveTrack(client, args);
@@ -323,7 +324,8 @@ export async function callTool(name, args, client = createClient()) {
     if (name === 'acervo_play_playlist') {
       const playlist = ((await client.get('/api/playlists')).playlists || []).find((item) => item.id === args.playlistId);
       if (!playlist) throw new Error('Playlist não encontrada.');
-      const ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter(Boolean);
+      const available = new Set(((await client.get('/api/library')).tracks || []).map((track) => track.id));
+      const ids = playlist.entries.map((entry) => entry.trackId || entry.videoId).filter((id) => id && available.has(id));
       if (!ids.length) throw new Error('Essa playlist ainda não tem músicas baixadas.');
       const command = await client.post('/api/mcp/command', { action: 'play', trackId: ids[0], queue: ids, qi: 0 });
       return textResult({ message: 'Playlist enviada para a aba Web.', playlist: playlist.name, tracks: ids.length, command: command.command });
